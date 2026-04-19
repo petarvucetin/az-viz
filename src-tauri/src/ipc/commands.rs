@@ -163,38 +163,88 @@ pub async fn do_verify_node(
     let node_id = NodeId::from_key(logical_key)
         .ok_or_else(|| format!("bad logical key: {logical_key}"))?;
 
-    // Mark as Verifying and drop the lock before spawning.
-    {
+    // Acquire graph once: set status = Verifying AND look up any needed parent name.
+    let parent_name: Option<String> = {
         let mut g = session.graph.lock().map_err(|e| e.to_string())?;
         match g.node_mut(&node_id) {
             Some(n) => n.status = NodeStatus::Verifying,
             None => return Err(format!("node not found: {logical_key}")),
         }
-    }
-
-    // Build the az argv.
-    let kind_str = match node_id.kind {
-        NodeKind::Vnet => "vnet",
-        NodeKind::Subnet => "vnet subnet",
-        NodeKind::Nsg => "nsg",
-        NodeKind::NsgRule => "nsg rule",
-        NodeKind::PublicIp => "public-ip",
-        NodeKind::Nic => "nic",
-        NodeKind::Lb => "lb",
-        NodeKind::RouteTable => "route-table",
-        NodeKind::ResourceGroup => {
-            // `az group show` (not `az network rg show`).
-            let mut argv = vec!["group".to_string(), "show".into(), "--name".into(), node_id.name.clone()];
-            if let Some(ref sub) = node_id.subscription { argv.extend(["--subscription".into(), sub.clone()]); }
-            return run_and_classify(&node_id, argv, session).await;
+        match node_id.kind {
+            NodeKind::Subnet => {
+                let parent = g.parents(&node_id).find_map(|p| {
+                    if matches!(p.kind, NodeKind::Vnet) {
+                        Some(p.name.clone())
+                    } else { None }
+                });
+                match parent {
+                    Some(n) => Some(n),
+                    None => return Err(format!("subnet {} has no parent VNet in the graph", logical_key)),
+                }
+            }
+            NodeKind::NsgRule => {
+                let parent = g.parents(&node_id).find_map(|p| {
+                    if matches!(p.kind, NodeKind::Nsg) {
+                        Some(p.name.clone())
+                    } else { None }
+                });
+                match parent {
+                    Some(n) => Some(n),
+                    None => return Err(format!("nsg rule {} has no parent NSG in the graph", logical_key)),
+                }
+            }
+            _ => None,
         }
     };
-    let mut argv: Vec<String> = "network".split_whitespace().map(String::from).collect();
-    for part in kind_str.split_whitespace() { argv.push(part.to_string()); }
-    argv.push("show".into());
-    argv.extend(["--name".into(), node_id.name.clone(),
-                 "--resource-group".into(), node_id.resource_group.clone()]);
-    if let Some(ref sub) = node_id.subscription { argv.extend(["--subscription".into(), sub.clone()]); }
+
+    // Build the az argv.
+    let argv: Vec<String> = match node_id.kind {
+        NodeKind::ResourceGroup => {
+            let mut a = vec!["group".to_string(), "show".into(), "--name".into(), node_id.name.clone()];
+            if let Some(ref sub) = node_id.subscription { a.extend(["--subscription".into(), sub.clone()]); }
+            a
+        }
+        NodeKind::Subnet => {
+            let vnet = parent_name.as_ref().expect("subnet parent checked above");
+            let mut a: Vec<String> = ["network", "vnet", "subnet", "show"].iter().map(|s| s.to_string()).collect();
+            a.extend([
+                "--name".into(), node_id.name.clone(),
+                "--resource-group".into(), node_id.resource_group.clone(),
+                "--vnet-name".into(), vnet.clone(),
+            ]);
+            if let Some(ref sub) = node_id.subscription { a.extend(["--subscription".into(), sub.clone()]); }
+            a
+        }
+        NodeKind::NsgRule => {
+            let nsg = parent_name.as_ref().expect("nsg-rule parent checked above");
+            let mut a: Vec<String> = ["network", "nsg", "rule", "show"].iter().map(|s| s.to_string()).collect();
+            a.extend([
+                "--name".into(), node_id.name.clone(),
+                "--resource-group".into(), node_id.resource_group.clone(),
+                "--nsg-name".into(), nsg.clone(),
+            ]);
+            if let Some(ref sub) = node_id.subscription { a.extend(["--subscription".into(), sub.clone()]); }
+            a
+        }
+        other => {
+            let kind_str = match other {
+                NodeKind::Vnet => "vnet",
+                NodeKind::Nsg => "nsg",
+                NodeKind::PublicIp => "public-ip",
+                NodeKind::Nic => "nic",
+                NodeKind::Lb => "lb",
+                NodeKind::RouteTable => "route-table",
+                _ => unreachable!(),
+            };
+            let mut a: Vec<String> = vec!["network".into(), kind_str.into(), "show".into()];
+            a.extend([
+                "--name".into(), node_id.name.clone(),
+                "--resource-group".into(), node_id.resource_group.clone(),
+            ]);
+            if let Some(ref sub) = node_id.subscription { a.extend(["--subscription".into(), sub.clone()]); }
+            a
+        }
+    };
 
     run_and_classify(&node_id, argv, session).await
 }
