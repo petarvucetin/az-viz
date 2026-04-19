@@ -87,6 +87,7 @@ pub async fn spawn_az(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     fn fake_az_path() -> String {
         let exe = if cfg!(windows) { "fake-az.exe" } else { "fake-az" };
@@ -95,6 +96,7 @@ mod tests {
         p.to_string_lossy().into_owned()
     }
 
+    #[serial]
     #[tokio::test]
     async fn runs_fake_az_and_reports_exit_zero() {
         std::env::set_var("AZ_FAKE_SCRIPT", r#"[{ "stdout": "hello\n", "exit_code": 0 }]"#);
@@ -115,6 +117,7 @@ mod tests {
         assert!(saw_stdout && saw_exit);
     }
 
+    #[serial]
     #[tokio::test]
     async fn reports_nonzero_exit_on_failure() {
         std::env::set_var("AZ_FAKE_SCRIPT", r#"[{ "stderr": "boom\n", "exit_code": 2 }]"#);

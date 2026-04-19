@@ -24,6 +24,7 @@ notify = "6"
 proptest = "1"
 pretty_assertions = "1"
 tempfile = "3"
+serial_test = "3"
 
 [[bin]]
 name = "az-plotter"
