@@ -12,6 +12,7 @@ fn bundled_arg_map_loads_and_has_core_entries() {
         "network nsg rule create",
         "network public-ip create",
         "network nic create",
+        "network route-table create",
     ] {
         assert!(map.lookup(key).is_some(), "missing entry: {key}");
     }
