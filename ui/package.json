@@ -1,7 +1,7 @@
 {
   "name": "az-plotter-ui",
   "private": true,
-  "version": "0.1.10",
+  "version": "0.1.11",
   "type": "module",
   "scripts": {
     "dev": "vite --port 1420 --strictPort",
@@ -22,6 +22,7 @@
   "dependencies": {
     "@tauri-apps/api": "^1.5.0",
     "cytoscape": "^3.28.0",
-    "cytoscape-dagre": "^2.5.0"
+    "cytoscape-dagre": "^2.5.0",
+    "cytoscape-node-html-label": "^1.2.2"
   }
 }
