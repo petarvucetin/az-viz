@@ -2,8 +2,11 @@ use serde::{Deserialize, Serialize};
 use super::scope::Scope;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum NodeKind {
-    Vnet, Subnet, Nsg, NsgRule, PublicIp, Nic, Lb, RouteTable, ResourceGroup,
+    Vnet, Subnet, Nsg, NsgRule, PublicIp, Nic, Lb, RouteTable,
+    #[serde(rename = "rg")]
+    ResourceGroup,
 }
 
 impl NodeKind {
