@@ -7,6 +7,10 @@ license.workspace = true
 [build-dependencies]
 tauri-build = { version = "1", features = [] }
 
+[features]
+# Required by `cargo tauri build`; must passthrough to `tauri/custom-protocol`.
+custom-protocol = ["tauri/custom-protocol"]
+
 [dependencies]
 tauri = { version = "1", features = ["shell-open", "dialog-all", "fs-all"] }
 serde.workspace = true
