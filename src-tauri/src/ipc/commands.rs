@@ -99,6 +99,60 @@ pub async fn run_live(app: AppHandle, state: tauri::State<'_, SessionState>) -> 
     Ok(())
 }
 
+/// Pure helper: the removal logic. Returns Err(message) on dep-refusal or not-found.
+/// Kept separate from the tauri::command wrapper so integration tests can call it
+/// without constructing a full Tauri runtime.
+pub fn do_remove_command(id: &str, session: &crate::ipc::state::Session) -> Result<(), String> {
+    let mut g = session.graph.lock().map_err(|e| e.to_string())?;
+    // Locate the command
+    let cmd = g.commands().find(|c| c.id == id).cloned()
+        .ok_or_else(|| format!("command not found: {id}"))?;
+    let produces = cmd.produces.clone();
+
+    // Dependency check: any DECLARED node has an edge FROM produces?
+    // Equivalently: any edge e where e.from == produces AND e.to is a declared node.
+    let dependents: Vec<_> = g.children(&produces)
+        .filter(|to_id| g.node(*to_id).map(|n| matches!(n.origin, crate::model::Origin::Declared)).unwrap_or(false))
+        .cloned()
+        .collect();
+    if let Some(dep) = dependents.first() {
+        return Err(format!(
+            "Can't remove {}: {} depends on it. Remove dependents first.",
+            produces.display(), dep.display()
+        ));
+    }
+
+    // Remove the produced node (drops all incident edges).
+    g.remove_node(&produces).map_err(|e| e.to_string())?;
+
+    // Remove the command record.
+    g.remove_command(id);
+
+    // Ghost cleanup: any node listed in the removed command's refs that is
+    // (a) a ghost AND (b) no remaining command lists it in its refs → remove.
+    for ref_id in cmd.refs.iter() {
+        let is_ghost = g.node(ref_id).map(|n| matches!(n.origin, crate::model::Origin::Ghost)).unwrap_or(false);
+        if !is_ghost { continue; }
+        let still_referenced = g.commands().any(|c| c.refs.contains(ref_id));
+        if !still_referenced {
+            let _ = g.remove_node(ref_id);
+        }
+    }
+
+    // Autosave if a project is open (same fire-and-forget policy as add_command).
+    drop(g);
+    if let Some(path) = session.project_path.lock().map_err(|e| e.to_string())?.as_ref() {
+        let g = session.graph.lock().map_err(|e| e.to_string())?;
+        let _ = crate::persist::ProjectFile::from_graph(&g).save(path);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn remove_command(id: String, state: tauri::State<SessionState>) -> Result<(), String> {
+    do_remove_command(&id, state.inner())
+}
+
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum RunEventWire {
