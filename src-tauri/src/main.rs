@@ -2,6 +2,7 @@
 mod model;
 mod parser;
 mod planner;
+mod runner;
 fn main() {
     tauri::Builder::default()
         .run(tauri::generate_context!())
