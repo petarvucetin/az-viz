@@ -333,11 +333,12 @@ pub async fn execute_node(
 ) -> Result<(), String> {
     use crate::model::{NodeId, NodeStatus};
     use crate::runner::{spawn_az, AzConfig, AzEvent};
+    use std::collections::VecDeque;
+    use std::time::Instant;
     use tokio::sync::{mpsc, oneshot};
     use chrono::Utc;
 
     let session = state.inner().clone();
-    // Try to acquire the execute lock without waiting. Fail fast if busy.
     let _guard = session.execute_lock.try_lock()
         .map_err(|_| "another command is already executing".to_string())?;
 
@@ -353,16 +354,17 @@ pub async fn execute_node(
         cmd.tokens.clone()
     };
 
-    // Mark as Running (pid placeholder 0 — spawn_az doesn't expose pid via AzEvent today).
+    // Mark as Running.
     {
         let mut g = session.graph.lock().map_err(|e| e.to_string())?;
         if let Some(n) = g.node_mut(&node_id) {
             n.status = NodeStatus::Running { pid: 0, started_at: Utc::now() };
         }
     }
-    let _ = app.emit_all("run-event", serde_json::json!({
-        "type": "node-started", "node": node_id.display(), "argv": argv.clone(),
-    }));
+    let _ = app.emit_all("run-event", serde_json::to_value(&RunEventWire::NodeStarted {
+        node: node_id.display(),
+        argv: argv.clone(),
+    }).unwrap());
 
     let cfg = AzConfig::default();
     let (tx, mut rx) = mpsc::channel::<AzEvent>(64);
@@ -370,63 +372,94 @@ pub async fn execute_node(
     let node_disp = node_id.display();
     let app_clone = app.clone();
     let argv_spawn = argv.clone();
+    let started_at = Instant::now();
 
-    // Run spawn_az inline; events drained below.
     let spawn_fut = async move {
         spawn_az(&cfg, &argv_spawn, tx, cancel_rx).await;
     };
 
+    // Termination cause discovered while draining the event stream.
+    enum Term {
+        Exit { code: i32, duration_ms: u64 },
+        Timeout,
+        Canceled,
+        Closed,  // channel closed without an explicit terminator (defensive)
+    }
+
     let drain_fut = async {
-        let mut exit_code: Option<i32> = None;
-        let mut stderr_tail = String::new();
-        let mut duration_ms: u64 = 0;
+        // Bounded deque of recent stderr lines; trim by total byte count.
+        let mut stderr_lines: VecDeque<String> = VecDeque::new();
+        let mut stderr_bytes: usize = 0;
+        const STDERR_BUDGET: usize = 2048;
+
+        let mut term: Term = Term::Closed;
         while let Some(ev) = rx.recv().await {
             match ev {
                 AzEvent::Stdout(line) => {
-                    let _ = app_clone.emit_all("run-event", serde_json::json!({
-                        "type": "node-log", "node": node_disp, "line": line, "is_err": false,
-                    }));
+                    let _ = app_clone.emit_all("run-event", serde_json::to_value(&RunEventWire::NodeLog {
+                        node: node_disp.clone(), line: line.clone(), is_err: false,
+                    }).unwrap());
                 }
                 AzEvent::Stderr(line) => {
-                    if stderr_tail.len() < 2048 {
-                        stderr_tail.push_str(&line);
-                        stderr_tail.push('\n');
+                    // Track tail-bounded stderr.
+                    stderr_bytes += line.len() + 1; // +1 for newline join later
+                    stderr_lines.push_back(line.clone());
+                    while stderr_bytes > STDERR_BUDGET && stderr_lines.len() > 1 {
+                        if let Some(dropped) = stderr_lines.pop_front() {
+                            stderr_bytes = stderr_bytes.saturating_sub(dropped.len() + 1);
+                        }
                     }
-                    let _ = app_clone.emit_all("run-event", serde_json::json!({
-                        "type": "node-log", "node": node_disp, "line": line, "is_err": true,
-                    }));
+                    let _ = app_clone.emit_all("run-event", serde_json::to_value(&RunEventWire::NodeLog {
+                        node: node_disp.clone(), line, is_err: true,
+                    }).unwrap());
                 }
-                AzEvent::Exit { code, duration_ms: d } => { exit_code = Some(code); duration_ms = d; break; }
-                AzEvent::Timeout => break,
-                AzEvent::Canceled => break,
+                AzEvent::Exit { code, duration_ms } => { term = Term::Exit { code, duration_ms }; break; }
+                AzEvent::Timeout => { term = Term::Timeout; break; }
+                AzEvent::Canceled => { term = Term::Canceled; break; }
             }
         }
-        (exit_code, stderr_tail, duration_ms)
+        let stderr_tail: String = stderr_lines.into_iter().collect::<Vec<_>>().join("\n");
+        (term, stderr_tail)
     };
 
-    let (_, (exit_code, stderr_tail, duration_ms)) = tokio::join!(spawn_fut, drain_fut);
+    let (_, (term, stderr_tail)) = tokio::join!(spawn_fut, drain_fut);
 
-    let status = match exit_code {
-        Some(0) => NodeStatus::Succeeded { duration_ms },
-        Some(code) => NodeStatus::Failed { exit_code: code, stderr_tail: stderr_tail.clone(), duration_ms },
-        None => NodeStatus::Failed { exit_code: -1, stderr_tail: "no exit event".into(), duration_ms: 0 },
+    let elapsed_ms = started_at.elapsed().as_millis() as u64;
+    let status = match term {
+        Term::Exit { code: 0, duration_ms } => NodeStatus::Succeeded { duration_ms },
+        Term::Exit { code, duration_ms } => NodeStatus::Failed {
+            exit_code: code, stderr_tail: stderr_tail.clone(), duration_ms,
+        },
+        Term::Timeout => NodeStatus::Failed {
+            exit_code: -1,
+            stderr_tail: if stderr_tail.is_empty() { "timeout".into() } else { format!("timeout\n{stderr_tail}") },
+            duration_ms: elapsed_ms,
+        },
+        Term::Canceled => NodeStatus::Canceled,
+        Term::Closed => NodeStatus::Failed {
+            exit_code: -1,
+            stderr_tail: if stderr_tail.is_empty() { "no exit event".into() } else { stderr_tail.clone() },
+            duration_ms: elapsed_ms,
+        },
     };
     let status_str = match &status {
         NodeStatus::Succeeded { .. } => "succeeded",
         NodeStatus::Failed { .. } => "failed",
+        NodeStatus::Canceled => "canceled",
         _ => "other",
-    };
+    }.to_string();
+
     {
         let mut g = session.graph.lock().map_err(|e| e.to_string())?;
         if let Some(n) = g.node_mut(&node_id) { n.status = status.clone(); }
     }
-    let _ = app.emit_all("run-event", serde_json::json!({
-        "type": "node-finished", "node": node_disp, "status": status_str,
-    }));
-    let _ = app.emit_all("run-event", serde_json::json!({
-        "type": "done", "succeeded": if matches!(status, NodeStatus::Succeeded { .. }) { 1 } else { 0 },
-                        "failed":    if matches!(status, NodeStatus::Failed { .. }) { 1 } else { 0 },
-    }));
+    let _ = app.emit_all("run-event", serde_json::to_value(&RunEventWire::NodeFinished {
+        node: node_disp.clone(), status: status_str,
+    }).unwrap());
+    let _ = app.emit_all("run-event", serde_json::to_value(&RunEventWire::Done {
+        succeeded: if matches!(status, NodeStatus::Succeeded { .. }) { 1 } else { 0 },
+        failed: if matches!(status, NodeStatus::Failed { .. }) { 1 } else { 0 },
+    }).unwrap());
 
     Ok(())
 }
