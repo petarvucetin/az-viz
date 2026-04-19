@@ -134,7 +134,11 @@ path = "src/bin/regen-argmap.rs"
   },
   "package": { "productName": "az-plotter", "version": "0.1.0" },
   "tauri": {
-    "allowlist": { "shell": { "execute": true, "open": true } },
+    "allowlist": {
+      "shell": { "open": true },
+      "dialog": { "all": true },
+      "fs": { "all": true }
+    },
     "bundle": {
       "active": true,
       "identifier": "com.station5solutions.az-plotter",
