@@ -59,3 +59,21 @@ fn remove_command_unknown_id_errors() {
     let err = az_plotter::ipc::commands::do_remove_command("cmd-nonexistent", &s).unwrap_err();
     assert!(err.contains("not found"));
 }
+
+#[test]
+fn remove_command_autosaves_when_project_open() {
+    let s = session();
+    let tmp = tempfile::NamedTempFile::new().unwrap();
+    let tmp_path = tmp.path().to_path_buf();
+    drop(tmp); // let the file be created fresh by ProjectFile::save
+    *s.project_path.lock().unwrap() = Some(tmp_path.clone());
+
+    let cid = add(&s, "az network vnet create --name v --resource-group rg");
+    az_plotter::ipc::commands::do_remove_command(&cid, &s).unwrap();
+
+    // Autosave should have written the (now-empty) graph to tmp_path.
+    let content = std::fs::read_to_string(&tmp_path).expect("autosave file should exist");
+    assert!(!content.is_empty(), "autosave should have written something");
+    // Clean up
+    let _ = std::fs::remove_file(&tmp_path);
+}

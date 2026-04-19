@@ -139,10 +139,9 @@ pub fn do_remove_command(id: &str, session: &crate::ipc::state::Session) -> Resu
         }
     }
 
-    // Autosave if a project is open (same fire-and-forget policy as add_command).
-    drop(g);
+    // Autosave if a project is open. Matches add_command's lock ordering
+    // (graph → project_path) to prevent deadlock under concurrent IPC.
     if let Some(path) = session.project_path.lock().map_err(|e| e.to_string())?.as_ref() {
-        let g = session.graph.lock().map_err(|e| e.to_string())?;
         let _ = crate::persist::ProjectFile::from_graph(&g).save(path);
     }
     Ok(())
