@@ -61,6 +61,33 @@ fn extract_flag<'a>(rest: &'a [String], flag: &str) -> Option<&'a str> {
     None
 }
 
+/// Like `extract_flag` but collects all consecutive non-flag tokens after the flag.
+/// For `--address-prefixes 10.0.0.0/26 10.0.1.0/26 --some-other-flag x`, returns
+/// `vec!["10.0.0.0/26", "10.0.1.0/26"]`.
+fn extract_flag_multi<'a>(rest: &'a [String], flag: &str) -> Vec<&'a str> {
+    let short = short_alias(flag);
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < rest.len() {
+        let t = &rest[i];
+        let hit = t == flag || short.is_some_and(|s| t == s);
+        if hit {
+            i += 1;
+            while i < rest.len() && !rest[i].starts_with('-') {
+                out.push(rest[i].as_str());
+                i += 1;
+            }
+            return out;
+        }
+        if let Some(v) = t.strip_prefix(&format!("{flag}=")) {
+            out.push(v);
+            return out;
+        }
+        i += 1;
+    }
+    out
+}
+
 pub fn parse(line: &str, argmap: &ArgMap, graph: &Graph) -> Result<Parsed, ParseError> {
     let tokens = tokenize::tokenize(line)?; // starts with "network"
     let (path, rest) = argmap.longest_match(&tokens).ok_or(ParseError::UnknownSubcommand)?;
@@ -84,8 +111,23 @@ pub fn parse(line: &str, argmap: &ArgMap, graph: &Graph) -> Result<Parsed, Parse
     let kind = kind_from_str(&entry.produces.kind)
         .ok_or_else(|| ParseError::MissingFlag(format!("unknown kind: {}", entry.produces.kind)))?;
     let command_id = format!("cmd-{}", uuid::Uuid::new_v4());
-    let produces_node = Node::declared(kind, name.clone(), scope.clone(), command_id.clone());
+    let mut produces_node = Node::declared(kind, name.clone(), scope.clone(), command_id.clone());
     let produces_id = produces_node.id.clone();
+
+    // Populate declared props from argmap's `props` map.
+    for (prop_name, flag) in &entry.props {
+        let vals = extract_flag_multi(rest, flag);
+        match vals.len() {
+            0 => {} // flag not present — leave prop unset
+            1 => {
+                produces_node.props.insert(prop_name.clone(), serde_json::Value::String(vals[0].to_string()));
+            }
+            _ => {
+                let arr = vals.iter().map(|s| serde_json::Value::String(s.to_string())).collect();
+                produces_node.props.insert(prop_name.clone(), serde_json::Value::Array(arr));
+            }
+        }
+    }
 
     // Refs
     let mut warnings: Vec<Warning> = vec![];
@@ -211,5 +253,43 @@ mod tests {
         let p = parse("az network vnet subnet create --name s --resource-group rg --vnet-name v", &m, &g).unwrap();
         assert_eq!(p.new_nodes.iter().filter(|n| n.kind == NodeKind::Vnet).count(), 0);
         assert_eq!(p.new_edges.len(), 1);
+    }
+
+    #[test]
+    fn subnet_create_populates_cidr_prop() {
+        let g = Graph::new();
+        let m = load_argmap();
+        let p = parse(
+            "az network vnet subnet create --name s --resource-group rg --vnet-name v --address-prefixes 10.0.0.0/27",
+            &m, &g,
+        ).unwrap();
+        let subnet = p.new_nodes.iter().find(|n| n.kind == NodeKind::Subnet).unwrap();
+        let cidr = subnet.props.get("cidr").expect("cidr prop missing");
+        assert_eq!(cidr, &serde_json::json!("10.0.0.0/27"));
+    }
+
+    #[test]
+    fn vnet_create_populates_multi_prefix_cidr() {
+        let g = Graph::new();
+        let m = load_argmap();
+        let p = parse(
+            "az network vnet create --name net-hub --resource-group rg --address-prefixes 10.0.0.0/26 10.0.1.0/26",
+            &m, &g,
+        ).unwrap();
+        let vnet = p.new_nodes.iter().find(|n| n.kind == NodeKind::Vnet).unwrap();
+        let cidr = vnet.props.get("cidr").expect("cidr prop missing");
+        assert_eq!(cidr, &serde_json::json!(["10.0.0.0/26", "10.0.1.0/26"]));
+    }
+
+    #[test]
+    fn nsg_create_without_cidr_has_no_cidr_prop() {
+        let g = Graph::new();
+        let m = load_argmap();
+        let p = parse(
+            "az network nsg create --name n --resource-group rg",
+            &m, &g,
+        ).unwrap();
+        let nsg = &p.new_nodes[0];
+        assert!(nsg.props.get("cidr").is_none());
     }
 }

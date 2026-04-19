@@ -2,14 +2,16 @@
   "network vnet create": {
     "produces": { "kind": "vnet", "name_from": "--name" },
     "scope":    { "rg": "--resource-group", "location": "--location" },
-    "refs":     []
+    "refs":     [],
+    "props":    { "cidr": "--address-prefixes" }
   },
   "network vnet subnet create": {
     "produces": { "kind": "subnet", "name_from": "--name" },
     "scope":    { "rg": "--resource-group" },
     "refs": [
       { "kind": "vnet", "via": "--vnet-name", "required": true }
-    ]
+    ],
+    "props":    { "cidr": "--address-prefixes" }
   },
   "network nsg create": {
     "produces": { "kind": "nsg", "name_from": "--name" },
@@ -26,7 +28,8 @@
   "network public-ip create": {
     "produces": { "kind": "public-ip", "name_from": "--name" },
     "scope":    { "rg": "--resource-group", "location": "--location" },
-    "refs":     []
+    "refs":     [],
+    "props":    { "cidr": "--address" }
   },
   "network nic create": {
     "produces": { "kind": "nic", "name_from": "--name" },
