@@ -26,6 +26,9 @@ pub struct ArgMapEntry {
     pub produces: Produces,
     #[serde(default)] pub scope: ScopeFlags,
     #[serde(default)] pub refs: Vec<RefSpec>,
+    /// Map of prop-name → CLI flag. Parser reads these and populates `node.props`.
+    /// Example: `{ "cidr": "--address-prefixes" }`.
+    #[serde(default)] pub props: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
