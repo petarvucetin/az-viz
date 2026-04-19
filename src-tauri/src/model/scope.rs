@@ -18,7 +18,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn scope_equality_ignores_location_for_identity() {
+    fn scope_structural_equality_includes_location() {
         // Scope is a struct for carrying RG+sub+loc; identity semantics live in NodeId.
         let a = Scope { resource_group: "rg".into(), subscription: None, location: Some("westeurope".into()) };
         let b = Scope { resource_group: "rg".into(), subscription: None, location: None };

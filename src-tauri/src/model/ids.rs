@@ -40,6 +40,8 @@ impl NodeId {
         }
     }
 
+    /// Human-readable label for UI and log output.
+    /// Not a canonical identifier — use the struct's derived `Hash`/`Eq` for map keys or persistence.
     pub fn display(&self) -> String {
         match &self.subscription {
             Some(sub) => format!("{}/{}@rg:{}/sub:{}", self.kind.as_str(), self.name, self.resource_group, sub),
