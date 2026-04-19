@@ -49,14 +49,36 @@ fn short_alias(long_flag: &str) -> Option<&'static str> {
     }
 }
 
+/// Long-form aliases for Azure CLI flags that accept multiple canonical names.
+/// `az` accepts both forms; the argmap declares one, we match either.
+fn long_alias(long_flag: &str) -> Option<&'static str> {
+    match long_flag {
+        "--address-prefixes" => Some("--address-prefix"),
+        _                    => None,
+    }
+}
+
+fn flag_matches(token: &str, flag: &str) -> bool {
+    token == flag
+        || short_alias(flag).is_some_and(|s| token == s)
+        || long_alias(flag).is_some_and(|a| token == a)
+}
+
+fn flag_eq_prefix<'a>(token: &'a str, flag: &str) -> Option<&'a str> {
+    if let Some(v) = token.strip_prefix(&format!("{flag}=")) { return Some(v); }
+    if let Some(a) = long_alias(flag) {
+        if let Some(v) = token.strip_prefix(&format!("{a}=")) { return Some(v); }
+    }
+    None
+}
+
 fn extract_flag<'a>(rest: &'a [String], flag: &str) -> Option<&'a str> {
-    let short = short_alias(flag);
     let mut it = rest.iter();
     while let Some(t) = it.next() {
-        if t == flag || short.is_some_and(|s| t == s) {
+        if flag_matches(t, flag) {
             return it.next().map(|s| s.as_str());
         }
-        if let Some(v) = t.strip_prefix(&format!("{flag}=")) { return Some(v); }
+        if let Some(v) = flag_eq_prefix(t, flag) { return Some(v); }
     }
     None
 }
@@ -65,13 +87,11 @@ fn extract_flag<'a>(rest: &'a [String], flag: &str) -> Option<&'a str> {
 /// For `--address-prefixes 10.0.0.0/26 10.0.1.0/26 --some-other-flag x`, returns
 /// `vec!["10.0.0.0/26", "10.0.1.0/26"]`.
 fn extract_flag_multi<'a>(rest: &'a [String], flag: &str) -> Vec<&'a str> {
-    let short = short_alias(flag);
     let mut out = Vec::new();
     let mut i = 0;
     while i < rest.len() {
         let t = &rest[i];
-        let hit = t == flag || short.is_some_and(|s| t == s);
-        if hit {
+        if flag_matches(t, flag) {
             i += 1;
             while i < rest.len() && !rest[i].starts_with('-') {
                 out.push(rest[i].as_str());
@@ -79,7 +99,7 @@ fn extract_flag_multi<'a>(rest: &'a [String], flag: &str) -> Vec<&'a str> {
             }
             return out;
         }
-        if let Some(v) = t.strip_prefix(&format!("{flag}=")) {
+        if let Some(v) = flag_eq_prefix(t, flag) {
             out.push(v);
             return out;
         }
@@ -279,6 +299,20 @@ mod tests {
         let vnet = p.new_nodes.iter().find(|n| n.kind == NodeKind::Vnet).unwrap();
         let cidr = vnet.props.get("cidr").expect("cidr prop missing");
         assert_eq!(cidr, &serde_json::json!(["10.0.0.0/26", "10.0.1.0/26"]));
+    }
+
+    #[test]
+    fn subnet_create_accepts_singular_address_prefix_alias() {
+        let g = Graph::new();
+        let m = load_argmap();
+        // --address-prefix (singular) is an Azure CLI alias of --address-prefixes
+        let p = parse(
+            "az network vnet subnet create --name s --resource-group rg --vnet-name v --address-prefix 10.0.0.0/27",
+            &m, &g,
+        ).unwrap();
+        let subnet = p.new_nodes.iter().find(|n| n.kind == NodeKind::Subnet).unwrap();
+        let cidr = subnet.props.get("cidr").expect("cidr prop missing under singular alias");
+        assert_eq!(cidr, &serde_json::json!("10.0.0.0/27"));
     }
 
     #[test]
