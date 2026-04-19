@@ -32,3 +32,7 @@ path = "src/main.rs"
 [[bin]]
 name = "regen-argmap"
 path = "src/bin/regen-argmap.rs"
+
+[lib]
+name = "az_plotter"
+path = "src/lib.rs"

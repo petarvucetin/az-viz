@@ -1,0 +1,45 @@
+{
+  "network vnet create": {
+    "produces": { "kind": "vnet", "name_from": "--name" },
+    "scope":    { "rg": "--resource-group", "location": "--location" },
+    "refs":     []
+  },
+  "network vnet subnet create": {
+    "produces": { "kind": "subnet", "name_from": "--name" },
+    "scope":    { "rg": "--resource-group" },
+    "refs": [
+      { "kind": "vnet", "via": "--vnet-name", "required": true }
+    ]
+  },
+  "network nsg create": {
+    "produces": { "kind": "nsg", "name_from": "--name" },
+    "scope":    { "rg": "--resource-group", "location": "--location" },
+    "refs":     []
+  },
+  "network nsg rule create": {
+    "produces": { "kind": "nsg-rule", "name_from": "--name" },
+    "scope":    { "rg": "--resource-group" },
+    "refs": [
+      { "kind": "nsg", "via": "--nsg-name", "required": true }
+    ]
+  },
+  "network public-ip create": {
+    "produces": { "kind": "public-ip", "name_from": "--name" },
+    "scope":    { "rg": "--resource-group", "location": "--location" },
+    "refs":     []
+  },
+  "network nic create": {
+    "produces": { "kind": "nic", "name_from": "--name" },
+    "scope":    { "rg": "--resource-group", "location": "--location" },
+    "refs": [
+      { "kind": "subnet",    "via": "--subnet",             "required": true },
+      { "kind": "public-ip", "via": "--public-ip-address",  "required": false },
+      { "kind": "nsg",       "via": "--network-security-group", "required": false }
+    ]
+  },
+  "network route-table create": {
+    "produces": { "kind": "route-table", "name_from": "--name" },
+    "scope":    { "rg": "--resource-group", "location": "--location" },
+    "refs":     []
+  }
+}
