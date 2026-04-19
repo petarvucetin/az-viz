@@ -169,8 +169,6 @@
   onMount(() => {
     cy = cytoscape({
       container,
-      elements: buildElements($nodes, $edges),
-      layout: { name: "dagre", rankDir: "TB", nodeSep: 40, rankSep: 60 } as any,
       wheelSensitivity: 0.2,
       style: [
         {
@@ -180,8 +178,8 @@
             "background-color": "#ffffff",
             "border-color": "#4a90e2",
             "border-width": 1.5,
-            "width": 180,
-            "height": 70,
+            "width": 190,
+            "height": 68,
             "label": "",
           } as any,
         },
@@ -197,14 +195,16 @@
             "border-color": "#4a90e2",
             "border-width": 1.5,
             "label": "data(label)",
-            "text-halign": "left",
+            "text-halign": "center",
             "text-valign": "top",
-            "text-margin-y": -8,
-            "text-margin-x": 14,
+            "text-margin-y": -4,
             "color": "#4a90e2",
-            "font-size": 11,
-            "font-weight": 600,
-            "padding": "14px",
+            "font-size": 12,
+            "font-weight": 700,
+            "text-background-color": "#fafcff",
+            "text-background-opacity": 1,
+            "text-background-padding": "6px",
+            "padding": "18px",
           } as any,
         },
         {
@@ -221,6 +221,8 @@
       ],
     });
 
+    // Register HTML label extension BEFORE any nodes are added, so the 'add'
+    // event-driven attachment fires for every node including the initial batch.
     (cy as any).nodeHtmlLabel([
       {
         query: "node[kind]",
@@ -231,6 +233,9 @@
         tpl: nodeHtmlTemplate,
       },
     ]);
+
+    cy.add(buildElements($nodes, $edges) as any);
+    cy.layout({ name: "dagre", rankDir: "TB", nodeSep: 40, rankSep: 60 } as any).run();
 
     cy.on("tap", "node[kind]", (ev) => {
       const logical = ev.target.data("logicalKey") as string;
@@ -258,14 +263,14 @@
   :global(.azn) {
     font-family: system-ui, sans-serif;
     padding: 6px 10px;
-    min-width: 140px;
-    max-width: 220px;
-    text-align: left;
+    min-width: 150px;
+    max-width: 210px;
+    text-align: center;
     line-height: 1.3;
   }
-  :global(.azn-head) { display: flex; align-items: center; gap: 6px; }
+  :global(.azn-head) { display: flex; align-items: center; justify-content: center; gap: 6px; }
   :global(.azn-icon) { width: 14px; height: 14px; flex-shrink: 0; }
-  :global(.azn-name) { font-weight: 700; font-size: 11px; color: #0b2447; }
-  :global(.azn-cidr) { color: #c9184a; font-size: 10px; font-variant-numeric: tabular-nums; margin-top: 2px; }
-  :global(.azn-range) { color: #666; font-size: 9px; font-variant-numeric: tabular-nums; }
+  :global(.azn-name) { font-weight: 700; font-size: 12px; color: #0b2447; }
+  :global(.azn-cidr) { color: #c9184a; font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  :global(.azn-range) { color: #444; font-size: 10px; font-variant-numeric: tabular-nums; }
 </style>
