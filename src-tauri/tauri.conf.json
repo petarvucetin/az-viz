@@ -1,7 +1,7 @@
 {
   "build": {
-    "beforeBuildCommand": "npm --prefix ../ui run build",
-    "beforeDevCommand": "npm --prefix ../ui run dev",
+    "beforeBuildCommand": "npm --prefix ui run build",
+    "beforeDevCommand": "npm --prefix ui run dev",
     "devPath": "http://localhost:1420",
     "distDir": "../ui/dist"
   },
@@ -16,7 +16,15 @@
       "active": true,
       "identifier": "com.station5solutions.az-plotter",
       "icon": ["icons/icon.ico"],
-      "targets": ["msi", "nsis"]
+      "targets": ["msi", "nsis"],
+      "windows": {
+        "nsis": {
+          "installMode": "currentUser"
+        },
+        "wix": {
+          "language": ["en-US"]
+        }
+      }
     },
     "windows": [
       { "title": "az-plotter", "width": 1200, "height": 780, "resizable": true }
