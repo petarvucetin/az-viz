@@ -43,6 +43,31 @@ impl NodeId {
         }
     }
 
+    pub fn from_key(s: &str) -> Option<Self> {
+        // Inverse of display(): "<kind>/<name>@rg:<rg>[/sub:<sub>]"
+        let (kind_name, scope_part) = s.split_once('@')?;
+        let (kind_str, name) = kind_name.split_once('/')?;
+        if name.is_empty() { return None; }
+        let kind = match kind_str {
+            "vnet" => NodeKind::Vnet,
+            "subnet" => NodeKind::Subnet,
+            "nsg" => NodeKind::Nsg,
+            "nsg-rule" => NodeKind::NsgRule,
+            "public-ip" => NodeKind::PublicIp,
+            "nic" => NodeKind::Nic,
+            "lb" => NodeKind::Lb,
+            "route-table" => NodeKind::RouteTable,
+            "rg" => NodeKind::ResourceGroup,
+            _ => return None,
+        };
+        let (rg_part, sub) = match scope_part.split_once("/sub:") {
+            Some((rg, sub)) => (rg, Some(sub.to_string())),
+            None => (scope_part, None),
+        };
+        let rg = rg_part.strip_prefix("rg:")?.to_string();
+        Some(Self { kind, name: name.to_string(), resource_group: rg, subscription: sub })
+    }
+
     /// Human-readable label for UI and log output.
     /// Not a canonical identifier — use the struct's derived `Hash`/`Eq` for map keys or persistence.
     pub fn display(&self) -> String {
@@ -83,5 +108,39 @@ mod tests {
         let s1 = Scope { resource_group: "rg".into(), subscription: None, location: Some("eastus".into()) };
         let s2 = Scope { resource_group: "rg".into(), subscription: None, location: None };
         assert_eq!(NodeId::of(NodeKind::Vnet, "v", &s1), NodeId::of(NodeKind::Vnet, "v", &s2));
+    }
+
+    #[test]
+    fn node_id_from_key_parses_without_subscription() {
+        let id = NodeId::from_key("vnet/net-hub@rg:lakeflow").unwrap();
+        assert_eq!(id.kind, NodeKind::Vnet);
+        assert_eq!(id.name, "net-hub");
+        assert_eq!(id.resource_group, "lakeflow");
+        assert_eq!(id.subscription, None);
+    }
+
+    #[test]
+    fn node_id_from_key_parses_with_subscription() {
+        let id = NodeId::from_key("subnet/app@rg:rg1/sub:sub-abc").unwrap();
+        assert_eq!(id.kind, NodeKind::Subnet);
+        assert_eq!(id.name, "app");
+        assert_eq!(id.resource_group, "rg1");
+        assert_eq!(id.subscription, Some("sub-abc".into()));
+    }
+
+    #[test]
+    fn node_id_from_key_rejects_bad_input() {
+        assert!(NodeId::from_key("").is_none());
+        assert!(NodeId::from_key("vnet/v").is_none());             // no @rg
+        assert!(NodeId::from_key("bogus/v@rg:r").is_none());       // unknown kind
+        assert!(NodeId::from_key("vnet/@rg:r").is_none());         // empty name
+    }
+
+    #[test]
+    fn node_id_roundtrips_through_display_and_from_key() {
+        let scope = Scope { resource_group: "my-rg".into(), subscription: Some("s1".into()), location: None };
+        let id = NodeId::of(NodeKind::NsgRule, "rule-a", &scope);
+        let back = NodeId::from_key(&id.display()).unwrap();
+        assert_eq!(id, back);
     }
 }
