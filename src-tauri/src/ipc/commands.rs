@@ -152,6 +152,103 @@ pub fn remove_command(id: String, state: tauri::State<SessionState>) -> Result<(
     do_remove_command(&id, state.inner())
 }
 
+/// Run `az <kind> show --name N --resource-group RG [--subscription S]` and update
+/// `node.status` to `Exists` or `Missing` based on exit code. 10 s timeout.
+pub async fn do_verify_node(
+    logical_key: &str,
+    session: &crate::ipc::state::Session,
+) -> Result<crate::model::NodeStatus, String> {
+    use crate::model::{NodeId, NodeKind, NodeStatus};
+
+    let node_id = NodeId::from_key(logical_key)
+        .ok_or_else(|| format!("bad logical key: {logical_key}"))?;
+
+    // Mark as Verifying and drop the lock before spawning.
+    {
+        let mut g = session.graph.lock().map_err(|e| e.to_string())?;
+        match g.node_mut(&node_id) {
+            Some(n) => n.status = NodeStatus::Verifying,
+            None => return Err(format!("node not found: {logical_key}")),
+        }
+    }
+
+    // Build the az argv.
+    let kind_str = match node_id.kind {
+        NodeKind::Vnet => "vnet",
+        NodeKind::Subnet => "vnet subnet",
+        NodeKind::Nsg => "nsg",
+        NodeKind::NsgRule => "nsg rule",
+        NodeKind::PublicIp => "public-ip",
+        NodeKind::Nic => "nic",
+        NodeKind::Lb => "lb",
+        NodeKind::RouteTable => "route-table",
+        NodeKind::ResourceGroup => {
+            // `az group show` (not `az network rg show`).
+            let mut argv = vec!["group".to_string(), "show".into(), "--name".into(), node_id.name.clone()];
+            if let Some(ref sub) = node_id.subscription { argv.extend(["--subscription".into(), sub.clone()]); }
+            return run_and_classify(&node_id, argv, session).await;
+        }
+    };
+    let mut argv: Vec<String> = "network".split_whitespace().map(String::from).collect();
+    for part in kind_str.split_whitespace() { argv.push(part.to_string()); }
+    argv.push("show".into());
+    argv.extend(["--name".into(), node_id.name.clone(),
+                 "--resource-group".into(), node_id.resource_group.clone()]);
+    if let Some(ref sub) = node_id.subscription { argv.extend(["--subscription".into(), sub.clone()]); }
+
+    run_and_classify(&node_id, argv, session).await
+}
+
+async fn run_and_classify(
+    node_id: &crate::model::NodeId,
+    argv: Vec<String>,
+    session: &crate::ipc::state::Session,
+) -> Result<crate::model::NodeStatus, String> {
+    use crate::model::NodeStatus;
+    use crate::runner::{spawn_az, AzConfig, AzEvent};
+    use std::time::Duration;
+    use tokio::sync::{mpsc, oneshot};
+
+    let cfg = AzConfig { exe: "az".into(), timeout: Duration::from_secs(10) };
+    let (tx, mut rx) = mpsc::channel::<AzEvent>(32);
+    let (_cancel_tx, cancel_rx) = oneshot::channel();
+    spawn_az(&cfg, &argv, tx, cancel_rx).await;
+
+    // Drain the channel looking for an Exit event.
+    let mut exit_code: Option<i32> = None;
+    let mut timed_out = false;
+    while let Some(ev) = rx.recv().await {
+        match ev {
+            AzEvent::Exit { code, .. } => { exit_code = Some(code); break; }
+            AzEvent::Timeout => { timed_out = true; break; }
+            _ => {}
+        }
+    }
+
+    let new_status = if timed_out {
+        // Roll status back to Unverified and error out.
+        let mut g = session.graph.lock().map_err(|e| e.to_string())?;
+        if let Some(n) = g.node_mut(node_id) { n.status = NodeStatus::Unverified; }
+        return Err("verify timed out".into());
+    } else if exit_code == Some(0) {
+        NodeStatus::Exists
+    } else {
+        NodeStatus::Missing
+    };
+
+    let mut g = session.graph.lock().map_err(|e| e.to_string())?;
+    if let Some(n) = g.node_mut(node_id) { n.status = new_status.clone(); }
+    Ok(new_status)
+}
+
+#[tauri::command]
+pub async fn verify_node(
+    logical_key: String,
+    state: tauri::State<'_, SessionState>,
+) -> Result<crate::model::NodeStatus, String> {
+    do_verify_node(&logical_key, state.inner()).await
+}
+
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum RunEventWire {
