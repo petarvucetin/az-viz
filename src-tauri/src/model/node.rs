@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::time::Duration;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use super::{NodeId, NodeKind, Scope};
@@ -7,7 +6,7 @@ use super::{NodeId, NodeKind, Scope};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Origin { Declared, Ghost }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum NodeStatus {
     // declared
