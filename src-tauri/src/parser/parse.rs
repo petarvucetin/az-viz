@@ -39,10 +39,23 @@ fn kind_from_str(s: &str) -> Option<NodeKind> {
     })
 }
 
+fn short_alias(long_flag: &str) -> Option<&'static str> {
+    match long_flag {
+        "--resource-group" => Some("-g"),
+        "--name"           => Some("-n"),
+        "--location"       => Some("-l"),
+        "--subscription"   => Some("-s"),
+        _                  => None,
+    }
+}
+
 fn extract_flag<'a>(rest: &'a [String], flag: &str) -> Option<&'a str> {
+    let short = short_alias(flag);
     let mut it = rest.iter();
     while let Some(t) = it.next() {
-        if t == flag { return it.next().map(|s| s.as_str()); }
+        if t == flag || short.is_some_and(|s| t == s) {
+            return it.next().map(|s| s.as_str());
+        }
         if let Some(v) = t.strip_prefix(&format!("{flag}=")) { return Some(v); }
     }
     None
@@ -163,6 +176,21 @@ mod tests {
         let m = load_argmap();
         let err = parse("az network vnet create --name v", &m, &g).unwrap_err();
         assert!(matches!(err, ParseError::MissingResourceGroup));
+    }
+
+    #[test]
+    fn short_flags_are_accepted() {
+        let g = Graph::new();
+        let m = load_argmap();
+        // -g is the common short form of --resource-group; -n for --name
+        let p = parse(
+            "az network vnet create -g lakeflow-mssql-on-prem -n vnet-hub --address-prefixes 10.0.0.0/26 10.0.1.0/26",
+            &m, &g,
+        ).unwrap();
+        assert_eq!(p.new_nodes.len(), 1);
+        assert_eq!(p.new_nodes[0].kind, NodeKind::Vnet);
+        assert_eq!(p.new_nodes[0].name, "vnet-hub");
+        assert_eq!(p.new_nodes[0].id.resource_group, "lakeflow-mssql-on-prem");
     }
 
     #[test]
