@@ -29,6 +29,7 @@ fn main() {
             ipc_cmd::run_live,
             ipc_cmd::remove_command,
             ipc_cmd::verify_node,
+            ipc_cmd::execute_node,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

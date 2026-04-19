@@ -325,6 +325,112 @@ pub async fn verify_node(
     do_verify_node(&logical_key, state.inner()).await
 }
 
+#[tauri::command]
+pub async fn execute_node(
+    logical_key: String,
+    app: AppHandle,
+    state: tauri::State<'_, SessionState>,
+) -> Result<(), String> {
+    use crate::model::{NodeId, NodeStatus};
+    use crate::runner::{spawn_az, AzConfig, AzEvent};
+    use tokio::sync::{mpsc, oneshot};
+    use chrono::Utc;
+
+    let session = state.inner().clone();
+    // Try to acquire the execute lock without waiting. Fail fast if busy.
+    let _guard = session.execute_lock.try_lock()
+        .map_err(|_| "another command is already executing".to_string())?;
+
+    let node_id = NodeId::from_key(&logical_key)
+        .ok_or_else(|| format!("bad logical key: {logical_key}"))?;
+
+    // Find the command tokens belonging to this node.
+    let argv: Vec<String> = {
+        let g = session.graph.lock().map_err(|e| e.to_string())?;
+        let node = g.node(&node_id).ok_or_else(|| format!("node not found: {logical_key}"))?;
+        let cmd_id = node.command_id.clone().ok_or_else(|| "node has no command".to_string())?;
+        let cmd = g.commands().find(|c| c.id == cmd_id).ok_or_else(|| "command missing".to_string())?;
+        cmd.tokens.clone()
+    };
+
+    // Mark as Running (pid placeholder 0 — spawn_az doesn't expose pid via AzEvent today).
+    {
+        let mut g = session.graph.lock().map_err(|e| e.to_string())?;
+        if let Some(n) = g.node_mut(&node_id) {
+            n.status = NodeStatus::Running { pid: 0, started_at: Utc::now() };
+        }
+    }
+    let _ = app.emit_all("run-event", serde_json::json!({
+        "type": "node-started", "node": node_id.display(), "argv": argv.clone(),
+    }));
+
+    let cfg = AzConfig::default();
+    let (tx, mut rx) = mpsc::channel::<AzEvent>(64);
+    let (_cancel_tx, cancel_rx) = oneshot::channel();
+    let node_disp = node_id.display();
+    let app_clone = app.clone();
+    let argv_spawn = argv.clone();
+
+    // Run spawn_az inline; events drained below.
+    let spawn_fut = async move {
+        spawn_az(&cfg, &argv_spawn, tx, cancel_rx).await;
+    };
+
+    let drain_fut = async {
+        let mut exit_code: Option<i32> = None;
+        let mut stderr_tail = String::new();
+        let mut duration_ms: u64 = 0;
+        while let Some(ev) = rx.recv().await {
+            match ev {
+                AzEvent::Stdout(line) => {
+                    let _ = app_clone.emit_all("run-event", serde_json::json!({
+                        "type": "node-log", "node": node_disp, "line": line, "is_err": false,
+                    }));
+                }
+                AzEvent::Stderr(line) => {
+                    if stderr_tail.len() < 2048 {
+                        stderr_tail.push_str(&line);
+                        stderr_tail.push('\n');
+                    }
+                    let _ = app_clone.emit_all("run-event", serde_json::json!({
+                        "type": "node-log", "node": node_disp, "line": line, "is_err": true,
+                    }));
+                }
+                AzEvent::Exit { code, duration_ms: d } => { exit_code = Some(code); duration_ms = d; break; }
+                AzEvent::Timeout => break,
+                AzEvent::Canceled => break,
+            }
+        }
+        (exit_code, stderr_tail, duration_ms)
+    };
+
+    let (_, (exit_code, stderr_tail, duration_ms)) = tokio::join!(spawn_fut, drain_fut);
+
+    let status = match exit_code {
+        Some(0) => NodeStatus::Succeeded { duration_ms },
+        Some(code) => NodeStatus::Failed { exit_code: code, stderr_tail: stderr_tail.clone(), duration_ms },
+        None => NodeStatus::Failed { exit_code: -1, stderr_tail: "no exit event".into(), duration_ms: 0 },
+    };
+    let status_str = match &status {
+        NodeStatus::Succeeded { .. } => "succeeded",
+        NodeStatus::Failed { .. } => "failed",
+        _ => "other",
+    };
+    {
+        let mut g = session.graph.lock().map_err(|e| e.to_string())?;
+        if let Some(n) = g.node_mut(&node_id) { n.status = status.clone(); }
+    }
+    let _ = app.emit_all("run-event", serde_json::json!({
+        "type": "node-finished", "node": node_disp, "status": status_str,
+    }));
+    let _ = app.emit_all("run-event", serde_json::json!({
+        "type": "done", "succeeded": if matches!(status, NodeStatus::Succeeded { .. }) { 1 } else { 0 },
+                        "failed":    if matches!(status, NodeStatus::Failed { .. }) { 1 } else { 0 },
+    }));
+
+    Ok(())
+}
+
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum RunEventWire {
