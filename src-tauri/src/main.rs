@@ -26,6 +26,7 @@ fn main() {
             ipc_cmd::emit_script,
             ipc_cmd::open_project,
             ipc_cmd::save_project_as,
+            ipc_cmd::run_live,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
