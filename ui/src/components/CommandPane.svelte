@@ -1,18 +1,23 @@
 <script lang="ts">
   import { ipc } from "../lib/ipc";
-  import { nodes, edges } from "../lib/store";
+  import { nodes, edges, lastError } from "../lib/store";
   let line = "";
-  let err = "";
+  let localErr = "";
 
   async function add() {
-    err = "";
+    localErr = "";
     try {
       await ipc.addCommand(line.trim());
       line = "";
       const snap = await ipc.snapshot();
       nodes.set(snap.nodes); edges.set(snap.edges);
-    } catch (e) { err = String(e); }
+      lastError.set(null);
+    } catch (e) { localErr = String(e); }
   }
+
+  // Display whichever error is most recent — localErr from add-command,
+  // or the shared lastError from remove/verify/execute wrappers.
+  $: err = localErr || $lastError || "";
 </script>
 
 <div class="pane">

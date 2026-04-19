@@ -7,6 +7,7 @@
   import GraphCanvas from "./components/GraphCanvas.svelte";
   import DetailPane from "./components/DetailPane.svelte";
   import LogPane from "./components/LogPane.svelte";
+  import NodeContextMenu from "./components/NodeContextMenu.svelte";
 
   onMount(async () => {
     const snap = await ipc.snapshot();
@@ -27,6 +28,7 @@
     </div>
   </div>
 </div>
+<NodeContextMenu />
 
 <style>
   :global(html, body, #app) { height:100%; margin:0; }
