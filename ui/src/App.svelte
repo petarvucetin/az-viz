@@ -5,6 +5,8 @@
   import Toolbar from "./components/Toolbar.svelte";
   import CommandPane from "./components/CommandPane.svelte";
   import GraphCanvas from "./components/GraphCanvas.svelte";
+  import DetailPane from "./components/DetailPane.svelte";
+  import LogPane from "./components/LogPane.svelte";
 
   onMount(async () => {
     const snap = await ipc.snapshot();
@@ -18,7 +20,11 @@
   <div class="grid">
     <CommandPane />
     <div class="canvas-wrap"><GraphCanvas /></div>
-    <div class="detail">Detail placeholder</div>
+    <div class="right">
+      <DetailPane />
+      <div class="divider" />
+      <LogPane />
+    </div>
   </div>
 </div>
 
@@ -27,5 +33,6 @@
   .app { display:flex; flex-direction:column; height:100vh; font-family:system-ui, sans-serif; }
   .grid { flex:1; display:grid; grid-template-columns: 280px 1fr 300px; min-height:0; }
   .canvas-wrap { background:#fff; border-left:1px solid #ddd; border-right:1px solid #ddd; min-height:0; }
-  .detail { background:#fafafa; padding:10px; }
+  .right { display:grid; grid-template-rows: auto 1px 1fr; background:#fafafa; min-height:0; }
+  .divider { background:#ddd; }
 </style>
