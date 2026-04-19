@@ -14,6 +14,7 @@ pub enum AzEvent {
     Canceled,
 }
 
+#[derive(Clone)]
 pub struct AzConfig {
     pub exe: String,
     pub timeout: Duration,
