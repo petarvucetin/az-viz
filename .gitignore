@@ -1,0 +1,25 @@
+# Rust / Cargo
+target/
+**/*.rs.bk
+
+# Node / npm
+node_modules/
+dist/
+.vite/
+
+# Tauri build artifacts
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# App data
+*.log
+.env
+.env.local
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Brainstorming/internal
+.superpowers/
+.obsidian/

@@ -1,0 +1,24 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm --prefix ../ui run build",
+    "beforeDevCommand": "npm --prefix ../ui run dev",
+    "devPath": "http://localhost:1420",
+    "distDir": "../ui/dist"
+  },
+  "package": { "productName": "az-plotter", "version": "0.1.0" },
+  "tauri": {
+    "allowlist": {
+      "shell": { "open": true },
+      "dialog": { "all": true },
+      "fs": { "all": true }
+    },
+    "bundle": {
+      "active": true,
+      "identifier": "com.station5solutions.az-plotter",
+      "targets": ["msi", "nsis"]
+    },
+    "windows": [
+      { "title": "az-plotter", "width": 1200, "height": 780, "resizable": true }
+    ]
+  }
+}

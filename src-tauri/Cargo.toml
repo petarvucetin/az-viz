@@ -1,0 +1,34 @@
+[package]
+name = "az-plotter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+tauri = { version = "1", features = ["shell-open", "dialog-all", "fs-all"] }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+shell-words.workspace = true
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+directories = "5"
+notify = "6"
+
+[dev-dependencies]
+proptest = "1"
+pretty_assertions = "1"
+tempfile = "3"
+
+[[bin]]
+name = "az-plotter"
+path = "src/main.rs"
+
+[[bin]]
+name = "regen-argmap"
+path = "src/bin/regen-argmap.rs"
