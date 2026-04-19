@@ -20,3 +20,15 @@ export function applyRunEvent(ev: RunEvent) {
     case "done":         lastRun.set({ succeeded: ev.succeeded, failed: ev.failed }); break;
   }
 }
+
+export interface ContextMenuState {
+  logicalKey: string;
+  commandId: string | null;
+  origin: "Declared" | "Ghost";
+  status: string;
+  x: number;
+  y: number;
+}
+
+export const contextMenu = writable<ContextMenuState | null>(null);
+export const lastError = writable<string | null>(null);
