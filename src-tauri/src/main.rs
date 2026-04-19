@@ -3,6 +3,7 @@ mod model;
 mod parser;
 mod planner;
 mod runner;
+mod verify;
 fn main() {
     tauri::Builder::default()
         .run(tauri::generate_context!())
