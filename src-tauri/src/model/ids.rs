@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use super::scope::Scope;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum NodeKind {
     Vnet, Subnet, Nsg, NsgRule, PublicIp, Nic, Lb, RouteTable, ResourceGroup,
 }
@@ -22,7 +22,7 @@ impl NodeKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct NodeId {
     pub kind: NodeKind,
     pub name: String,
@@ -50,7 +50,7 @@ impl NodeId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum EdgeKind { Ref, Scope }
 
 #[cfg(test)]
