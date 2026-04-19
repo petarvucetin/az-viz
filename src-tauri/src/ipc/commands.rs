@@ -264,30 +264,56 @@ async fn run_and_classify(
     let (_cancel_tx, cancel_rx) = oneshot::channel();
     spawn_az(&cfg, &argv, tx, cancel_rx).await;
 
-    // Drain the channel looking for an Exit event.
+    // Drain events; capture stderr's first line so we can distinguish a spawn
+    // failure (stderr starts with "spawn error:" and exit is -1 at duration 0)
+    // from a genuine non-zero az exit.
     let mut exit_code: Option<i32> = None;
+    let mut exit_duration_ms: u64 = 0;
+    let mut stderr_first: Option<String> = None;
     let mut timed_out = false;
     while let Some(ev) = rx.recv().await {
         match ev {
-            AzEvent::Exit { code, .. } => { exit_code = Some(code); break; }
+            AzEvent::Stderr(line) if stderr_first.is_none() => { stderr_first = Some(line); }
+            AzEvent::Exit { code, duration_ms } => { exit_code = Some(code); exit_duration_ms = duration_ms; break; }
             AzEvent::Timeout => { timed_out = true; break; }
             _ => {}
         }
     }
 
-    let new_status = if timed_out {
-        // Roll status back to Unverified and error out.
+    // Helper: compare-and-swap the status back to a target ONLY if still Verifying.
+    // Prevents clobbering a concurrent execute_node that may have advanced the
+    // node to Running in the meantime.
+    let cas_status = |target: NodeStatus| -> Result<(), String> {
         let mut g = session.graph.lock().map_err(|e| e.to_string())?;
-        if let Some(n) = g.node_mut(node_id) { n.status = NodeStatus::Unverified; }
+        if let Some(n) = g.node_mut(node_id) {
+            if matches!(n.status, NodeStatus::Verifying) {
+                n.status = target;
+            }
+        }
+        Ok(())
+    };
+
+    // Spawn-failure detection: az.rs emits Exit { code: -1, duration_ms: 0 }
+    // preceded by Stderr("spawn error: ...") when Command::spawn fails.
+    let is_spawn_error = exit_code == Some(-1)
+        && exit_duration_ms == 0
+        && stderr_first.as_deref().map_or(false, |s| s.starts_with("spawn error:"));
+
+    if timed_out {
+        cas_status(NodeStatus::Unverified)?;
         return Err("verify timed out".into());
-    } else if exit_code == Some(0) {
+    }
+    if is_spawn_error {
+        cas_status(NodeStatus::Unverified)?;
+        return Err(stderr_first.unwrap_or_else(|| "spawn error".into()));
+    }
+
+    let new_status = if exit_code == Some(0) {
         NodeStatus::Exists
     } else {
         NodeStatus::Missing
     };
-
-    let mut g = session.graph.lock().map_err(|e| e.to_string())?;
-    if let Some(n) = g.node_mut(node_id) { n.status = new_status.clone(); }
+    cas_status(new_status.clone())?;
     Ok(new_status)
 }
 
