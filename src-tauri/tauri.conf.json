@@ -5,7 +5,7 @@
     "devPath": "http://localhost:1420",
     "distDir": "../ui/dist"
   },
-  "package": { "productName": "az-plotter", "version": "0.1.28" },
+  "package": { "productName": "az-plotter", "version": "0.1.29" },
   "tauri": {
     "allowlist": {
       "shell": { "open": true },

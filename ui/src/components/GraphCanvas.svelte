@@ -3,7 +3,7 @@
   import cytoscape from "cytoscape";
   import dagre from "cytoscape-dagre";
   import nodeHtmlLabel from "cytoscape-node-html-label";
-  import { nodes, edges, selectedNodeKey } from "../lib/store";
+  import { nodes, edges, selectedNodeKey, contextMenu } from "../lib/store";
   import type { Node as GNode, Edge as GEdge, NodeKind } from "../lib/types";
   import { cidrToRange, cidrContains } from "../lib/cidr";
   import { KIND_ICONS } from "../lib/icons";
@@ -50,6 +50,7 @@
     data: {
       id: string;           // visual id (may include #pN)
       logicalKey: string;   // backend key (for selection)
+      commandId: string | null;
       parent?: string;      // compound RG parent id
       kind: NodeKind;
       name: string;
@@ -88,6 +89,7 @@
             data: {
               id: vnetVisualId(key, i),
               logicalKey: key,
+              commandId: n.command_id ?? null,
               parent,
               kind: n.kind,
               name: n.name,
@@ -104,6 +106,7 @@
           data: {
             id: key,
             logicalKey: key,
+            commandId: n.command_id ?? null,
             parent,
             kind: n.kind,
             name: n.name,
@@ -187,6 +190,9 @@
         { selector: "node[status = 'running']", style: { "border-color": "#b58022" } },
         { selector: "node[status = 'succeeded']", style: { "border-color": "#2a8f3d" } },
         { selector: "node[status = 'failed']", style: { "border-color": "#b53030" } },
+        { selector: "node[status = 'missing']", style: { "border-color": "#ff8c1a", "border-style": "dashed" } as any },
+        { selector: "node[status = 'exists']",  style: { "border-color": "#2a8f3d" } as any },
+        { selector: "node[status = 'verifying']", style: { "border-color": "#b58022" } as any },
         {
           selector: "node.rg",
           style: {
@@ -240,6 +246,20 @@
     cy.on("tap", "node[kind]", (ev) => {
       const logical = ev.target.data("logicalKey") as string;
       selectedNodeKey.set(logical);
+    });
+
+    cy.on("cxttap", "node[kind]", (ev) => {
+      const data = ev.target.data();
+      // Prevent the webview's own context menu from stealing the event.
+      if (ev.originalEvent) ev.originalEvent.preventDefault();
+      contextMenu.set({
+        logicalKey: data.logicalKey,
+        commandId: data.commandId ?? null,
+        origin: data.origin,
+        status: data.status,
+        x: (ev.originalEvent as MouseEvent)?.clientX ?? 100,
+        y: (ev.originalEvent as MouseEvent)?.clientY ?? 100,
+      });
     });
   });
 
