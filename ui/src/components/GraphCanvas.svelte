@@ -82,10 +82,10 @@
   }
 
   function estimateHeight(data: { cidr?: string; range?: string; extraProps?: Array<[string, string]> }): number {
-    // Base (pill top-pad + name + bottom pad): 38. Each additional row adds ~14.
+    // Base: padding (12) + pill row (~16) + pill margin (6) + name (~18) = 52. Each extra row adds ~14.
     const extra = data.extraProps ? Math.min(data.extraProps.length, 3) : 0;
     const rows = (data.cidr ? 1 : 0) + (data.range ? 1 : 0) + extra;
-    return 38 + rows * 14;
+    return 52 + rows * 14;
   }
 
   interface VisualEdge {
@@ -346,18 +346,17 @@
 
   :global(.azn) {
     font-family: system-ui, sans-serif;
-    padding: 18px 10px 6px 10px;
-    min-width: 150px;
-    max-width: 210px;
-    text-align: center;
+    width: 190px;
+    box-sizing: border-box;
+    padding: 6px 10px;
     line-height: 1.3;
-    position: relative;
+    display: flex;
+    flex-direction: column;
+    text-align: center;
   }
   :global(.azn-pill) {
-    position: absolute;
-    top: 3px;
-    left: 4px;
-    z-index: 2;
+    align-self: flex-start;
+    margin-bottom: 6px;
     font-size: 9px; font-weight: 700;
     padding: 2px 8px;
     border-radius: 10px;
@@ -369,7 +368,7 @@
     white-space: nowrap;
     box-shadow: 0 1px 2px rgba(11, 36, 71, 0.15);
   }
-  :global(.azn-name) { font-weight: 700; font-size: 13px; color: #0b2447; letter-spacing: -0.01em; }
+  :global(.azn-name) { font-weight: 700; font-size: 13px; color: #0b2447; letter-spacing: -0.01em; text-align: center; }
   :global(.azn-cidr) { color: #c9184a; font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 2px; }
   :global(.azn-range) { color: #444; font-size: 10px; font-variant-numeric: tabular-nums; }
   :global(.azn-prop) { color: #555; font-size: 10px; margin-top: 1px; }
