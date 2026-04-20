@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { logLines, lastRun } from "../lib/store";
+  import { appState } from "../lib/store.svelte";
 </script>
 
 <div class="pane">
   <div class="lbl">Log</div>
-  <pre class="log">{$logLines.join("\n")}</pre>
-  {#if $lastRun}
+  <pre class="log">{appState.logLines.join("\n")}</pre>
+  {#if appState.lastRun}
     <div class="summary">
-      Done: {$lastRun.succeeded} succeeded · {$lastRun.failed} failed
+      Done: {appState.lastRun.succeeded} succeeded · {appState.lastRun.failed} failed
     </div>
   {/if}
 </div>

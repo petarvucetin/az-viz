@@ -31,28 +31,35 @@ export async function runLayout(
 
   function toElk(parentId: string | undefined): any[] {
     const children = byParent[parentId ?? "__root__"] ?? [];
-    return children.map(c => ({
-      id: c.id,
-      width: c.width,
-      height: c.height,
-      children: (byParent[c.id]?.length ?? 0) > 0 ? toElk(c.id) : undefined,
-      layoutOptions: {
-        "elk.padding": "[top=32,left=18,bottom=18,right=18]",
-      },
-    }));
+    return children.map(c => {
+      const hasChildren = (byParent[c.id]?.length ?? 0) > 0;
+      return {
+        id: c.id,
+        width: c.width,
+        height: c.height,
+        children: hasChildren ? toElk(c.id) : undefined,
+        layoutOptions: {
+          "elk.padding": "[top=32,left=18,bottom=18,right=18]",
+          ...(hasChildren ? {
+            "elk.algorithm": "mrtree",
+            "elk.direction": "DOWN",
+            "elk.spacing.nodeNode": "80",
+            // "elk.layered.spacing.nodeNodeBetweenLayers": "10",
+            "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+            "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+          } : {}),
+        },
+      };
+    });
   }
 
   const graph = {
     id: "root",
     layoutOptions: {
-      "elk.algorithm": "layered",
-      "elk.direction": "DOWN",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "60",
-      "elk.spacing.nodeNode": "70",
-      "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
-      "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-      "elk.edgeRouting": "ORTHOGONAL",
-      "elk.hierarchyHandling": "INCLUDE_CHILDREN",
+      // "elk.algorithm": "mrtree",
+      // "elk.direction": "DOWN",
+     
+      // "elk.hierarchyHandling": "INCLUDE_CHILDREN",
     },
     children: toElk(undefined),
     edges: edges.map(e => ({ id: e.id, sources: [e.source], targets: [e.target] })),

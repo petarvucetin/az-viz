@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { nodes, edges, selectedNodeKey, lastError } from "../lib/store";
+  import { appState } from "../lib/store.svelte";
   import { ipc } from "../lib/ipc";
   import { cidrToRange } from "../lib/cidr";
 
@@ -8,22 +8,20 @@
     return `${id.kind}/${id.name}@rg:${id.resource_group}${sub}`;
   }
 
-  $: selected = $nodes.find(n => keyOf(n.id) === $selectedNodeKey) ?? null;
-  $: statusKind = selected?.status.kind ?? "";
-  $: isDeclared = selected?.origin === "Declared";
-  $: isRunning = statusKind === "running";
-  $: isVerifying = statusKind === "verifying";
+  let selected = $derived(appState.nodes.find(n => keyOf(n.id) === appState.selectedNodeKey) ?? null);
+  let statusKind = $derived(selected?.status.kind ?? "");
+  let isDeclared = $derived(selected?.origin === "Declared");
+  let isRunning = $derived(statusKind === "running");
+  let isVerifying = $derived(statusKind === "verifying");
 
-  // Extract CIDR(s) from props.
-  $: cidrs = (() => {
+  let cidrs = $derived.by(() => {
     const raw = selected?.props?.cidr;
     if (typeof raw === "string") return [raw];
     if (Array.isArray(raw)) return raw.filter((x): x is string => typeof x === "string");
     return [];
-  })();
+  });
 
-  // All non-cidr props, for the "Properties" section.
-  $: otherProps = (() => {
+  let otherProps = $derived.by(() => {
     const out: Array<[string, string]> = [];
     const p = selected?.props ?? {};
     for (const [k, v] of Object.entries(p)) {
@@ -33,25 +31,24 @@
       else if (Array.isArray(v)) out.push([k, v.filter(x => typeof x === "string").join(", ")]);
     }
     return out;
-  })();
+  });
 
-  // Availability per spec §5.4.
-  $: showRemove = !!selected && isDeclared;
-  $: showVerify = !!selected;
-  $: showExecute = !!selected && isDeclared;
-  $: removeDisabled = !selected || isRunning || !selected.command_id;
-  $: verifyDisabled = !selected || isRunning || isVerifying;
-  $: executeDisabled = !selected || isRunning;
+  let showRemove = $derived(!!selected && isDeclared);
+  let showVerify = $derived(!!selected);
+  let showExecute = $derived(!!selected && isDeclared);
+  let removeDisabled = $derived(!selected || isRunning || !selected.command_id);
+  let verifyDisabled = $derived(!selected || isRunning || isVerifying);
+  let executeDisabled = $derived(!selected || isRunning);
 
   async function refreshSnapshot() {
     const snap = await ipc.snapshot();
-    nodes.set(snap.nodes);
-    edges.set(snap.edges);
+    appState.nodes = snap.nodes;
+    appState.edges = snap.edges;
   }
 
   async function remove() {
     if (!selected?.command_id) return;
-    try { await ipc.removeCommand(selected.command_id); await refreshSnapshot(); selectedNodeKey.set(null); }
+    try { await ipc.removeCommand(selected.command_id); await refreshSnapshot(); appState.selectedNodeKey = null; }
     catch { /* lastError set by wrapper */ }
   }
 
@@ -108,13 +105,13 @@
 
     <div class="actions">
       {#if showRemove}
-        <button class="btn destructive" on:click={remove} disabled={removeDisabled}>Remove</button>
+        <button class="btn destructive" onclick={remove} disabled={removeDisabled}>Remove</button>
       {/if}
       {#if showVerify}
-        <button class="btn" on:click={verify} disabled={verifyDisabled}>Check Azure</button>
+        <button class="btn" onclick={verify} disabled={verifyDisabled}>Check Azure</button>
       {/if}
       {#if showExecute}
-        <button class="btn" on:click={execute} disabled={executeDisabled}>Execute</button>
+        <button class="btn" onclick={execute} disabled={executeDisabled}>Execute</button>
       {/if}
     </div>
   {:else}

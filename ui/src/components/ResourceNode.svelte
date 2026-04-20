@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { Handle, Position } from "@xyflow/svelte";
+  import { Handle, Position, type NodeProps, type Node } from "@xyflow/svelte";
   import { cidrToRange } from "../lib/cidr";
 
-  export let data: {
+  type ResourceData = {
     kind: string;
     name: string;
     origin: string;
@@ -13,28 +13,35 @@
     logicalKey: string;
     context: string;
     selectedDirect?: boolean;
+    blocked?: boolean;
   };
 
-  $: countSuffix = (() => {
+  type ResourceNode = Node<ResourceData, "resource">;
+
+  let { data, ...rest }: NodeProps<ResourceNode> = $props();
+
+  let countSuffix = $derived.by(() => {
     if (!data.cidr) return "";
     const r = cidrToRange(data.cidr);
     return r ? ` (${r.count})` : "";
-  })();
+  });
 
   function truncate(s: string, max = 40): string {
     return s.length > max ? s.slice(0, max - 1) + "\u2026" : s;
   }
 
-  $: statusClass = `status-${data.status}`;
-  $: originClass = data.origin === "Ghost" ? "origin-ghost" : "origin-declared";
+  let statusClass = $derived(`status-${data.status}`);
+  let originClass = $derived(data.origin === "Ghost" ? "origin-ghost" : "origin-declared");
 </script>
 
-<Handle type="target" position={Position.Top} style="opacity:0;" />
+<Handle type="target" position={Position.Top} />
 
 <div
   class="azn {statusClass} {originClass}"
   class:selected={data.selectedDirect}
+  class:blocked={data.blocked}
   data-ctx={data.context}
+  title={data.blocked ? "cannot execute — parent not declared" : undefined}
 >
   <span class="azn-pill" data-k={data.kind}>{data.kind}</span>
   <div class="azn-name">{data.name}</div>
@@ -51,7 +58,7 @@
   {/if}
 </div>
 
-<Handle type="source" position={Position.Bottom} style="opacity:0;" />
+<Handle type="source" position={Position.Bottom} />
 
 <style>
   .azn {
@@ -79,6 +86,8 @@
   .azn.status-missing    { border-color: #ff8c1a; border-style: dashed; }
   .azn.status-verifying  { border-color: #b58022; border-style: dashed; }
   .azn.selected          { border-color: #0b2447; border-width: 3px; }
+  .azn.blocked           { opacity: 0.4; filter: grayscale(0.9); }
+  .azn.blocked .azn-pill { filter: grayscale(1); }
 
   .azn-pill {
     align-self: flex-start;

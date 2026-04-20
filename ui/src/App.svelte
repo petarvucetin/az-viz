@@ -1,16 +1,17 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { ipc, onRunEvent } from "./lib/ipc";
-  import { nodes, edges, applyRunEvent } from "./lib/store";
+  import { appState } from "./lib/store.svelte";
   import Toolbar from "./components/Toolbar.svelte";
   import CommandPane from "./components/CommandPane.svelte";
   import GraphCanvas from "./components/GraphCanvas.svelte";
   import DetailPane from "./components/DetailPane.svelte";
   import LogPane from "./components/LogPane.svelte";
+
   onMount(async () => {
     const snap = await ipc.snapshot();
-    nodes.set(snap.nodes); edges.set(snap.edges);
-    await onRunEvent(ev => applyRunEvent(ev));
+    appState.nodes = snap.nodes; appState.edges = snap.edges;
+    await onRunEvent(ev => appState.applyRunEvent(ev));
   });
 </script>
 
@@ -21,7 +22,7 @@
     <div class="canvas-wrap"><GraphCanvas /></div>
     <div class="right">
       <DetailPane />
-      <div class="divider" />
+      <div class="divider"></div>
       <LogPane />
     </div>
   </div>

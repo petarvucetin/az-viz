@@ -2,9 +2,10 @@
   import { onMount } from "svelte";
   import { getVersion } from "@tauri-apps/api/app";
   import { ipc } from "../lib/ipc";
-  import { nodes, edges, fitSignal, layoutSignal } from "../lib/store";
-  let running = false;
-  let version = "";
+  import { appState } from "../lib/store.svelte";
+
+  let running = $state(false);
+  let version = $state("");
 
   onMount(async () => {
     try { version = await getVersion(); } catch { /* not running under tauri */ }
@@ -18,19 +19,19 @@
     running = true;
     try { await ipc.runLive(); } finally { running = false; }
     const snap = await ipc.snapshot();
-    nodes.set(snap.nodes); edges.set(snap.edges);
+    appState.nodes = snap.nodes; appState.edges = snap.edges;
   }
-  function fit() { fitSignal.update(n => n + 1); }
-  function relayout() { layoutSignal.update(n => n + 1); }
+  function fit() { appState.fitSignal++; }
+  function relayout() { appState.layoutSignal++; }
 </script>
 
 <div class="toolbar">
   <span class="title">az-plotter</span>
   <span class="sep">·</span>
-  <button on:click={dry} disabled={running}>Dry-run</button>
-  <button on:click={run} disabled={running} class="primary">Run</button>
-  <button on:click={fit}>Fit</button>
-  <button on:click={relayout}>Re-layout</button>
+  <button onclick={dry} disabled={running}>Dry-run</button>
+  <button onclick={run} disabled={running} class="primary">Run</button>
+  <button onclick={fit}>Fit</button>
+  <button onclick={relayout}>Re-layout</button>
   <button disabled>Emit script</button>
   <button disabled={!running}>Stop</button>
   <span class="spacer"></span>

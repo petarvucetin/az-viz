@@ -1,11 +1,11 @@
 import { invoke } from "@tauri-apps/api/tauri";
 import { listen } from "@tauri-apps/api/event";
 import type { GraphSnapshot, RunEvent, NodeStatus } from "./types";
-import { lastError } from "./store";
+import { appState } from "./store.svelte";
 
 async function withErrorStore<T>(p: Promise<T>): Promise<T> {
-  try { lastError.set(null); return await p; }
-  catch (e) { lastError.set(String(e)); throw e; }
+  try { appState.lastError = null; return await p; }
+  catch (e) { appState.lastError = String(e); throw e; }
 }
 
 export const ipc = {

@@ -1,11 +1,12 @@
 <script lang="ts">
   import { SvelteFlow, SvelteFlowProvider, MarkerType, type Node as SFNode, type Edge as SFEdge } from "@xyflow/svelte";
   import "@xyflow/svelte/dist/style.css";
-  import { writable } from "svelte/store";
-  import { nodes as storeNodes, edges as storeEdges, selectedNodeKey, fitSignal, layoutSignal } from "../lib/store";
+  import { untrack } from "svelte";
+  import { appState } from "../lib/store.svelte";
   import type { Node as GNode, Edge as GEdge } from "../lib/types";
   import { cidrToRange, cidrContains } from "../lib/cidr";
   import { runLayout } from "../lib/layout";
+  import { computeBlocked } from "../lib/blocking";
   import ResourceNode from "./ResourceNode.svelte";
   import ResourceGroupNode from "./ResourceGroupNode.svelte";
   import FlowActions from "./FlowActions.svelte";
@@ -61,7 +62,6 @@
     return 52 + rows * 14;
   }
 
-  /** Strip the #pN suffix to get the logical key. */
   function logicalOf(nodeId: string): string {
     const i = nodeId.lastIndexOf("#p");
     return i >= 0 ? nodeId.slice(0, i) : nodeId;
@@ -74,19 +74,16 @@
     rg: ResourceGroupNode as any,
   };
 
-  // ─── Svelte Flow stores ─────────────────────────────────────────────────────
+  // ─── Local state ────────────────────────────────────────────────────────────
 
-  const sfNodes = writable<SFNode[]>([]);
-  const sfEdges = writable<SFEdge[]>([]);
-
-  // Generation counter prevents stale async layout results from overwriting
-  // results from a newer build triggered by a rapid store update.
+  let sfNodes = $state<SFNode[]>([]);
+  let sfEdges = $state<SFEdge[]>([]);
   let layoutGen = 0;
 
   // ─── Build + layout ─────────────────────────────────────────────────────────
 
   function buildElements(ns: GNode[], es: GEdge[], selKey: string | null): { nodes: SFNode[]; edges: SFEdge[] } {
-    // 1. RG compound nodes (must be added before their children)
+    const blocked = computeBlocked(ns, es);
     const rgs = new Set<string>();
     for (const n of ns) rgs.add(n.scope.resource_group);
 
@@ -102,7 +99,6 @@
       });
     }
 
-    // 2. Visual nodes (multi-prefix VNet expansion)
     const vnetPrefixesByKey: Record<string, string[]> = {};
     const nodesByKey: Record<string, GNode> = {};
     for (const n of ns) nodesByKey[keyOf(n.id)] = n;
@@ -111,7 +107,7 @@
       const key = keyOf(n.id);
       const parent = rgId(n.scope.resource_group);
       const prefixes = vnetPrefixes(n);
-      const extraProps = otherProps(n);
+      const extraP = otherProps(n);
 
       const mkData = (visualId: string, cidr: string | undefined) => ({
         logicalKey: key,
@@ -121,9 +117,10 @@
         status: n.status.kind,
         cidr,
         range: cidr && cidrToRange(cidr) ? `${cidrToRange(cidr)!.first} – ${cidrToRange(cidr)!.last}` : undefined,
-        extraProps,
+        extraProps: extraP,
         context: contextOf(n.kind),
         selectedDirect: selKey !== null && key === selKey,
+        blocked: blocked.has(key),
       });
 
       if (n.kind === "vnet" && prefixes.length > 1) {
@@ -139,10 +136,9 @@
             position: { x: 0, y: 0 },
             data: d,
             parentId: parent,
-            extent: "parent",
+            expandParent: true,
             width: w,
             height: h,
-            draggable: false,
             selectable: false,
           });
         });
@@ -157,7 +153,7 @@
           position: { x: 0, y: 0 },
           data: d,
           parentId: parent,
-          extent: "parent",
+          expandParent: true,
           width: w,
           height: h,
           selectable: false,
@@ -165,21 +161,18 @@
       }
     }
 
-    // 3. Edges — retarget source when VNet has multiple prefixes (VNet→Subnet direction)
-    // Edge IDs are content-based (not positional) so reconciliation is stable
-    // when the edge list is reordered or grows.
     const resultEdges: SFEdge[] = es.map((e) => {
       const fromKey = keyOf(e.from);
       const toKey = keyOf(e.to);
       let source = fromKey;
-      const prefixes = vnetPrefixesByKey[fromKey];
-      if (prefixes && prefixes.length > 1) {
+      const pfx = vnetPrefixesByKey[fromKey];
+      if (pfx && pfx.length > 1) {
         const subnet = nodesByKey[toKey];
         const rawSub = subnet?.props?.cidr as unknown;
         const subnetCidr = typeof rawSub === "string" ? rawSub : Array.isArray(rawSub) ? rawSub[0] : undefined;
         let idx = 0;
         if (typeof subnetCidr === "string") {
-          const found = prefixes.findIndex((p) => cidrContains(p, subnetCidr));
+          const found = pfx.findIndex((p) => cidrContains(p, subnetCidr));
           if (found >= 0) idx = found;
         }
         source = vnetVisualId(fromKey, idx);
@@ -212,11 +205,11 @@
       height: (n.height as number) ?? 200,
       parent: n.parentId,
     }));
+    
     const layoutEdges = rawEdges.map(e => ({ id: e.id, source: e.source, target: e.target }));
 
     const { positions, sizes } = await runLayout(layoutNodes, layoutEdges);
 
-    // Bail if a newer layout superseded us.
     if (gen !== layoutGen) return;
 
     const positioned: SFNode[] = rawNodes.map(n => {
@@ -229,75 +222,77 @@
       return out;
     });
 
-    sfNodes.set(positioned);
-    sfEdges.set(rawEdges);
+    sfNodes = positioned;
+    sfEdges = rawEdges;
   }
 
-  // Rebuild + layout whenever the graph data changes (nodes/edges). Selection
-  // changes are applied separately below without a full ELK re-layout.
-  $: buildAndLayout($storeNodes, $storeEdges, null);
+  // Rebuild + layout whenever the graph data changes.
+  $effect(() => {
+    const ns = appState.nodes;
+    const es = appState.edges;
+    buildAndLayout(ns, es, null);
+  });
 
-  // Apply selection-only updates: restyle edges and mark the selected node's
-  // `selectedDirect`. Does NOT rebuild the graph or run ELK.
-  $: {
-    const selKey = $selectedNodeKey;
-    sfNodes.update(list => list.map(n => {
-      if (n.type !== "resource") return n;
-      const logical = (n.data as any)?.logicalKey;
-      const sel = selKey !== null && logical === selKey;
-      return { ...n, data: { ...(n.data as any), selectedDirect: sel } };
-    }));
-    sfEdges.update(list => list.map(e => {
-      const srcLogical = logicalOf(e.source);
-      const tgtLogical = logicalOf(e.target);
-      const on = selKey !== null && (srcLogical === selKey || tgtLogical === selKey);
-      const color = on ? "#0b2447" : "#4a90e2";
-      return {
-        ...e,
-        style: on ? "stroke:#0b2447;stroke-width:3;" : "stroke:#4a90e2;stroke-width:1.5;",
-        zIndex: on ? 10 : 0,
-        markerEnd: { type: MarkerType.ArrowClosed, color },
-      };
-    }));
-  }
+  // Apply selection-only updates without full ELK re-layout.
+  $effect(() => {
+    const selKey = appState.selectedNodeKey;
+    untrack(() => {
+      sfNodes = sfNodes.map(n => {
+        if (n.type !== "resource") return n;
+        const logical = (n.data as any)?.logicalKey;
+        const sel = selKey !== null && logical === selKey;
+        return { ...n, data: { ...(n.data as any), selectedDirect: sel } };
+      });
+      sfEdges = sfEdges.map(e => {
+        const srcLogical = logicalOf(e.source);
+        const tgtLogical = logicalOf(e.target);
+        const on = selKey !== null && (srcLogical === selKey || tgtLogical === selKey);
+        const color = on ? "#0b2447" : "#4a90e2";
+        return {
+          ...e,
+          style: on ? "stroke:#0b2447;stroke-width:3;" : "stroke:#4a90e2;stroke-width:1.5;",
+          zIndex: on ? 10 : 0,
+          markerEnd: { type: MarkerType.ArrowClosed, color },
+        };
+      });
+    });
+  });
 
   // ─── Node click ─────────────────────────────────────────────────────────────
 
-  function onNodeClick(event: CustomEvent<{ node: SFNode; event: MouseEvent | TouchEvent }>) {
-    const clicked = event.detail?.node;
-    if (!clicked) return;
-    const logical = (clicked.data as any)?.logicalKey as string | undefined;
-    if (logical) selectedNodeKey.set(logical);
+  function onNodeClick({ node }: { node: SFNode; event: MouseEvent | TouchEvent }) {
+    const logical = (node.data as any)?.logicalKey as string | undefined;
+    if (logical) appState.selectedNodeKey = logical;
   }
 
   // ─── Re-layout signal ────────────────────────────────────────────────────────
-  // Only fires when $layoutSignal changes, not when the graph data changes.
-  // (Prevents double-ELK runs on node add which can race and drop edges.)
   let lastLayoutSignal = 0;
-  $: {
-    const v = $layoutSignal;
+  $effect(() => {
+    const v = appState.layoutSignal;
     if (v !== lastLayoutSignal && v > 0) {
       lastLayoutSignal = v;
-      buildAndLayout($storeNodes, $storeEdges, null);
+      untrack(() => {
+        buildAndLayout(appState.nodes, appState.edges, null);
+      });
     }
-  }
+  });
 </script>
 
 <SvelteFlowProvider>
   <div class="canvas">
     <SvelteFlow
       {nodeTypes}
-      nodes={sfNodes}
-      edges={sfEdges}
+      bind:nodes={sfNodes}
+      bind:edges={sfEdges}
       fitView
       nodesDraggable={true}
       nodesConnectable={false}
       elementsSelectable={false}
       deleteKey={null}
       defaultEdgeOptions={{ type: "default", style: "stroke:#4a90e2;stroke-width:1.5;", markerEnd: { type: MarkerType.ArrowClosed, color: "#4a90e2" } }}
-      on:nodeclick={onNodeClick}
+      onnodeclick={onNodeClick}
     >
-      <FlowActions {fitSignal} />
+      <FlowActions />
     </SvelteFlow>
   </div>
 </SvelteFlowProvider>
@@ -310,4 +305,5 @@
   :global(.svelte-flow__attribution) { display: none; }
   :global(.svelte-flow__edges) { z-index: 5; }
   :global(.svelte-flow__edge-path) { stroke-width: 1.5; stroke: #4a90e2; fill: none; }
+  :global(.svelte-flow__handle) { opacity: 0 !important; }
 </style>

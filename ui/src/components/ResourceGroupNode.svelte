@@ -1,5 +1,10 @@
 <script lang="ts">
-  export let data: { label: string };
+  import type { NodeProps, Node } from "@xyflow/svelte";
+
+  type RGData = { label: string };
+  type RGNode = Node<RGData, "rg">;
+
+  let { data, ...rest }: NodeProps<RGNode> = $props();
 </script>
 
 <div class="rg">

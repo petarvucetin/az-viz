@@ -1,13 +1,16 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { ipc } from "../lib/ipc";
-  import { nodes, edges, lastError, selectedNodeKey } from "../lib/store";
-  let line = "";
-  let localErr = "";
+  import { appState } from "../lib/store.svelte";
+  import type { Node as GNode } from "../lib/types";
+  // `computeBlocked` follows every incoming reference edge (not just the
+  // container-kind edge used by `parentKeyOf` for visual nesting). So a
+  // private-dns-link whose --virtual-network isn't declared is correctly
+  // marked blocked here, even though it's nested under its zone in the tree.
+  import { keyOf, parentKeyOf, computeBlocked } from "../lib/blocking";
 
-  function keyOf(id: any): string {
-    const sub = id.subscription ? `/sub:${id.subscription}` : "";
-    return `${id.kind}/${id.name}@rg:${id.resource_group}${sub}`;
-  }
+  let line = $state("");
+  let localErr = $state("");
 
   function splitLines(input: string): string[] {
     const rawLines = input.split(/\r?\n/);
@@ -43,58 +46,159 @@
         const preview = cmd.length > 80 ? cmd.slice(0, 77) + "..." : cmd;
         localErr = `Line ${processed + 1} (${preview}): ${e}`;
         const snap = await ipc.snapshot();
-        nodes.set(snap.nodes); edges.set(snap.edges);
+        appState.nodes = snap.nodes; appState.edges = snap.edges;
         return;
       }
     }
 
     line = "";
     const snap = await ipc.snapshot();
-    nodes.set(snap.nodes); edges.set(snap.edges);
-    lastError.set(null);
+    appState.nodes = snap.nodes; appState.edges = snap.edges;
+    appState.lastError = null;
   }
 
-  $: err = localErr || $lastError || "";
+  let err = $derived(localErr || appState.lastError || "");
+
+  let tree = $derived.by(() => {
+    const all = appState.nodes;
+    const edges = appState.edges;
+    const declaredCount = all.filter(n => n.origin === "Declared").length;
+    const nodeByKey: Record<string, GNode> = {};
+    for (const n of all) nodeByKey[keyOf(n.id)] = n;
+
+    const childrenByParent: Record<string, string[]> = {};
+    for (const n of all) {
+      const k = keyOf(n.id);
+      const pk = parentKeyOf(n, edges);
+      const parent = pk ?? `rg:${n.scope.resource_group}`;
+      (childrenByParent[parent] ??= []).push(k);
+    }
+    const rgs = Array.from(new Set(all.map(n => n.scope.resource_group))).sort();
+    const blocked = computeBlocked(all, edges);
+    return { rgs, childrenByParent, nodeByKey, blocked, declaredCount };
+  });
+
+  let expanded = $state<Record<string, boolean>>({});
+  function toggle(k: string) {
+    if (expanded[k]) delete expanded[k];
+    else expanded[k] = true;
+  }
+
+  // Default-expand RG rows the first time we see them.
+  $effect(() => {
+    const rgs = tree.rgs;
+    untrack(() => {
+      for (const rg of rgs) {
+        const k = `rg:${rg}`;
+        if (expanded[k] === undefined) expanded[k] = true;
+      }
+    });
+  });
 </script>
 
 <div class="pane">
   <label class="lbl">New command(s)</label>
   <textarea bind:value={line} rows="6" placeholder="az network vnet create --name v --resource-group rg&#10;az network vnet subnet create --name s --resource-group rg --vnet-name v --address-prefixes 10.0.0.0/27"></textarea>
-  <button on:click={add} disabled={!line.trim()}>Add</button>
+  <button onclick={add} disabled={!line.trim()}>Add</button>
   {#if err}<div class="err">{err}</div>{/if}
 
-  <label class="lbl">Commands ({$nodes.filter(n => n.origin === "Declared").length})</label>
-  <ul class="cmd-list">
-    {#each $nodes.filter(n => n.origin === "Declared") as n}
-      {@const k = keyOf(n.id)}
-      <li
-        class:selected={k === $selectedNodeKey}
-        on:click={() => selectedNodeKey.set(k)}
-        on:keydown={(e) => { if (e.key === "Enter" || e.key === " ") selectedNodeKey.set(k); }}
-        role="button"
-        tabindex="0"
-      >
-        <span class="cmd-kind" data-k={n.kind}>{n.kind}</span>
-        <span class="cmd-name">{n.name}</span>
+  <label class="lbl">Resources ({tree.declaredCount})</label>
+  <ul class="tree">
+    {#each tree.rgs as rg}
+      {@const rgKey = `rg:${rg}`}
+      <li class="tnode">
+        <div
+          class="row rg-row"
+          onclick={() => toggle(rgKey)}
+          onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(rgKey); } }}
+          role="button"
+          tabindex="0"
+        >
+          <span class="caret">{expanded[rgKey] ? "▼" : "▶"}</span>
+          <span class="rg-name">{rg}</span>
+        </div>
+        {#if expanded[rgKey]}
+          <ul class="children">
+            {#each tree.childrenByParent[rgKey] ?? [] as ck (ck)}
+              {@render branch(ck)}
+            {/each}
+          </ul>
+        {/if}
       </li>
     {/each}
   </ul>
 </div>
+
+{#snippet branch(key: string)}
+  {@const n = tree.nodeByKey[key]}
+  {@const kids = tree.childrenByParent[key] ?? []}
+  {#if n}
+    {@const ghost = n.origin === "Ghost"}
+    {@const blocked = tree.blocked.has(key)}
+    <li class="tnode">
+      <div class="row" class:selected={key === appState.selectedNodeKey} class:dim={blocked}>
+        {#if kids.length > 0}
+          <span
+            class="caret"
+            onclick={(e) => { e.stopPropagation(); toggle(key); }}
+            onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggle(key); } }}
+            role="button"
+            tabindex="0"
+          >{expanded[key] ? "▼" : "▶"}</span>
+        {:else}
+          <span class="caret no-kids"></span>
+        {/if}
+        <span
+          class="leaf"
+          onclick={() => appState.selectedNodeKey = key}
+          onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") appState.selectedNodeKey = key; }}
+          role="button"
+          tabindex="0"
+          title={blocked ? (ghost ? "implied (not declared) — cannot execute" : "parent not declared — cannot execute") : undefined}
+        >
+          <span class="cmd-kind" data-k={n.kind}>{n.kind}</span>
+          <span class="cmd-name">{n.name}</span>
+        </span>
+      </div>
+      {#if expanded[key] && kids.length > 0}
+        <ul class="children">
+          {#each kids as ck (ck)}
+            {@render branch(ck)}
+          {/each}
+        </ul>
+      {/if}
+    </li>
+  {/if}
+{/snippet}
 
 <style>
   .pane { padding:10px; background:#fafafa; height:100%; box-sizing:border-box; overflow:auto; }
   .lbl { display:block; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:#666; margin:10px 0 4px; }
   textarea { width:100%; font-family:monospace; font-size:12px; box-sizing:border-box; }
   button { margin-top:6px; width:100%; padding:6px; }
-  .cmd-list { list-style:none; padding:0; margin:0; font-size:12px; }
-  .cmd-list li {
+  .tree, .children { list-style:none; padding:0; margin:0; font-size:12px; }
+  .children { padding-left:14px; border-left:1px dotted #d0d7e2; margin-left:5px; }
+  .tnode { position:relative; }
+  .row {
     display:flex; align-items:center; gap:6px;
-    padding:4px 6px; border-radius:3px;
+    padding:3px 4px; border-radius:3px;
     cursor:pointer;
     border:1px solid transparent;
+    user-select:none;
   }
-  .cmd-list li:hover { background:#eef3fb; }
-  .cmd-list li.selected { background:#dbeafe; border-color:#4a90e2; }
+  .row:hover { background:#eef3fb; }
+  .row.selected { background:#dbeafe; border-color:#4a90e2; }
+  .row.dim { opacity:0.45; font-style:italic; }
+  .row.dim:hover { opacity:0.75; }
+  .rg-row { font-weight:700; color:#4a90e2; letter-spacing:.02em; }
+  .rg-name { font-family:system-ui, sans-serif; font-size:12px; }
+  .caret {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:12px; height:12px; flex-shrink:0;
+    font-size:8px; color:#6b7280;
+  }
+  .caret.no-kids { visibility:hidden; }
+  .leaf { display:flex; align-items:center; gap:6px; flex:1; min-width:0; cursor:pointer; }
   .cmd-kind {
     display:inline-block;
     font-size:9px; font-weight:700;
