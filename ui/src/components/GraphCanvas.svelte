@@ -65,6 +65,7 @@
       range?: string;
       extraProps?: Array<[string, string]>;  // non-cidr props, e.g. [["sku","Basic"], ["gateway-type","Vpn"]]
       height?: number;
+      width?: number;
     };
     classes?: string;
   }
@@ -87,6 +88,28 @@
     const extra = data.extraProps ? Math.min(data.extraProps.length, 3) : 0;
     const rows = (data.cidr ? 1 : 0) + (data.range ? 1 : 0) + extra;
     return 52 + rows * 14;
+  }
+
+  function estimateWidth(data: { name: string; kind: string; cidr?: string; range?: string; extraProps?: Array<[string, string]> }): number {
+    // Rough pixel widths for system-ui fonts at the sizes we use.
+    const nameCharW = 7.5;   // 13px bold
+    const cidrCharW = 6.8;   // 11px
+    const rangeCharW = 6.2;  // 10px
+    const propCharW = 6.0;   // 10px
+    const pillCharW = 5.8;   // 9px + borders
+    const padding = 22;      // left+right padding + safety
+
+    const nameW = data.name.length * nameCharW;
+    const pillW = data.kind.length * pillCharW + 18;  // pill has its own padding
+    const cidrW = data.cidr ? data.cidr.length * cidrCharW + 30 : 0;  // +count suffix
+    const rangeW = data.range ? data.range.length * rangeCharW : 0;
+    const propW = Math.max(0, ...(data.extraProps ?? []).slice(0, 3).map(([k, v]) => {
+      const truncated = v.length > 40 ? 40 : v.length;
+      return (k.length + 2 + truncated) * propCharW;
+    }));
+
+    const contentW = Math.max(nameW, pillW, cidrW, rangeW, propW);
+    return Math.max(170, Math.min(320, Math.ceil(contentW + padding)));
   }
 
   interface VisualEdge {
@@ -127,7 +150,7 @@
             range: cidrToRange(p) ? `${cidrToRange(p)!.first} – ${cidrToRange(p)!.last}` : undefined,
             extraProps,
           };
-          visualNodes.push({ data: { ...nodeData, height: estimateHeight(nodeData) }, classes: `ctx-${contextOf(n.kind)}` });
+          visualNodes.push({ data: { ...nodeData, height: estimateHeight(nodeData), width: estimateWidth(nodeData) }, classes: `ctx-${contextOf(n.kind)}` });
         });
       } else {
         const cidr = displayCidr(n);
@@ -144,7 +167,7 @@
           range: cidr && cidrToRange(cidr) ? `${cidrToRange(cidr)!.first} – ${cidrToRange(cidr)!.last}` : undefined,
           extraProps,
         };
-        visualNodes.push({ data: { ...nodeData, height: estimateHeight(nodeData) }, classes: `ctx-${contextOf(n.kind)}` });
+        visualNodes.push({ data: { ...nodeData, height: estimateHeight(nodeData), width: estimateWidth(nodeData) }, classes: `ctx-${contextOf(n.kind)}` });
       }
     }
 
@@ -213,7 +236,7 @@
             "border-color": "#4a90e2",
             "border-width": 1.5,
             "border-style": "dashed",
-            "width": 190,
+            "width": "data(width)",
             "height": "data(height)",
             "label": "",
             "shadow-blur": 6,
@@ -284,7 +307,9 @@
             "line-color": "#4a90e2",
             "target-arrow-color": "#4a90e2",
             "target-arrow-shape": "triangle",
-            "curve-style": "straight",
+            "curve-style": "taxi",
+            "taxi-direction": "vertical",
+            "taxi-turn": "50%",
           } as any,
         },
       ],
@@ -386,7 +411,7 @@
 
   :global(.azn) {
     font-family: system-ui, sans-serif;
-    width: 190px;
+    width: 100%;
     box-sizing: border-box;
     padding: 6px 10px;
     line-height: 1.3;
@@ -422,7 +447,7 @@
   :global(.azn-pill[data-k="vnet-peering"])  { background:#ecfccb; color:#3f6212; border-color:#84cc16; }
   :global(.azn-pill[data-k="dns-resolver"])  { background:#ede9fe; color:#5b21b6; border-color:#8b5cf6; }
   :global(.azn-pill[data-k="private-dns-zone"]) { background:#f5f3ff; color:#4c1d95; border-color:#7c3aed; }
-  :global(.azn-name) { font-weight: 700; font-size: 13px; color: #0b2447; letter-spacing: -0.01em; text-align: center; }
+  :global(.azn-name) { font-weight: 700; font-size: 13px; color: #0b2447; letter-spacing: -0.01em; text-align: center; word-break: break-all; }
   :global(.azn-cidr) { color: #c9184a; font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 2px; }
   :global(.azn-range) { color: #444; font-size: 10px; font-variant-numeric: tabular-nums; }
   :global(.azn-prop) { color: #555; font-size: 10px; margin-top: 1px; }
