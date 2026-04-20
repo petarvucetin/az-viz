@@ -235,6 +235,7 @@ pub async fn do_verify_node(
                 NodeKind::Lb => "lb",
                 NodeKind::RouteTable => "route-table",
                 NodeKind::VnetGateway => "vnet-gateway",
+                NodeKind::LocalGateway => "local-gateway",
                 _ => unreachable!(),
             };
             let mut a: Vec<String> = vec!["network".into(), kind_str.into(), "show".into()];

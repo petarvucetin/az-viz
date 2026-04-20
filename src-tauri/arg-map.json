@@ -57,5 +57,14 @@
       "gateway-type": "--gateway-type",
       "vpn-type":     "--vpn-type"
     }
+  },
+  "network local-gateway create": {
+    "produces": { "kind": "local-gateway", "name_from": "--name" },
+    "scope":    { "rg": "--resource-group", "location": "--location" },
+    "refs":     [],
+    "props": {
+      "cidr":       "--local-address-prefixes",
+      "gateway-ip": "--gateway-ip-address"
+    }
   }
 }

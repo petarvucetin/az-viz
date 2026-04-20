@@ -29,6 +29,8 @@ export const KIND_ICONS: Record<NodeKind, string> = {
   "route-table": svgDataUrl(`<path d="M8 2 V6 M8 6 L3 11 V14 M8 6 L13 11 V14"/><path d="M1.5 12 L3 14 L4.5 12 M11.5 12 L13 14 L14.5 12"/>`),
   // Gateway arrow (VNet Gateway) — bidirectional arrow through a box
   "vnet-gateway": svgDataUrl(`<rect x="2" y="5" width="12" height="6" rx="1"/><path d="M1 8 L5 8 M11 8 L15 8"/><path d="M3 6 L1 8 L3 10 M13 6 L15 8 L13 10"/>`),
+  // House silhouette (Local Gateway = on-prem endpoint)
+  "local-gateway": svgDataUrl(`<path d="M2 8 L8 3 L14 8 V13 Q14 14 13 14 H3 Q2 14 2 13 Z"/><rect x="7" y="10" width="2" height="4"/>`),
   // Folder (Resource group)
   "rg": svgDataUrl(`<path d="M1.5 4 H6 L7.5 5.5 H14.5 V13 Q14.5 14 13.5 14 H2.5 Q1.5 14 1.5 13 Z"/>`),
 };
