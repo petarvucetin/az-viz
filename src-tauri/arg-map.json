@@ -13,6 +13,15 @@
     ],
     "props":    { "cidr": "--address-prefixes" }
   },
+  "network vnet peering create": {
+    "produces": { "kind": "vnet", "name_from": "--vnet-name" },
+    "scope":    { "rg": "--resource-group" },
+    "refs":     [],
+    "props": {
+      "peering":     "--name",
+      "remote-vnet": "--remote-vnet"
+    }
+  },
   "network nsg create": {
     "produces": { "kind": "nsg", "name_from": "--name" },
     "scope":    { "rg": "--resource-group", "location": "--location" },
