@@ -29,7 +29,7 @@
     "produces": { "kind": "public-ip", "name_from": "--name" },
     "scope":    { "rg": "--resource-group", "location": "--location" },
     "refs":     [],
-    "props":    { "cidr": "--address" }
+    "props":    { "cidr": "--address", "sku": "--sku", "allocation": "--allocation-method" }
   },
   "network nic create": {
     "produces": { "kind": "nic", "name_from": "--name" },
@@ -51,6 +51,11 @@
     "refs": [
       { "kind": "vnet",      "via": "--vnet",                "required": true },
       { "kind": "public-ip", "via": "--public-ip-addresses", "required": true }
-    ]
+    ],
+    "props": {
+      "sku":          "--sku",
+      "gateway-type": "--gateway-type",
+      "vpn-type":     "--vpn-type"
+    }
   }
 }

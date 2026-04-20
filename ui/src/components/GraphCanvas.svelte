@@ -58,7 +58,20 @@
       status: string;
       cidr?: string;
       range?: string;
+      extraProps?: Array<[string, string]>;  // non-cidr props, e.g. [["sku","Basic"], ["gateway-type","Vpn"]]
     };
+  }
+
+  /** Collect all non-cidr props as display-friendly (key, value) pairs. */
+  function otherProps(n: GNode): Array<[string, string]> {
+    const out: Array<[string, string]> = [];
+    const p = n.props ?? {};
+    for (const [k, v] of Object.entries(p)) {
+      if (k === "cidr") continue;
+      if (typeof v === "string") out.push([k, v]);
+      else if (Array.isArray(v)) out.push([k, v.filter(x => typeof x === "string").join(", ")]);
+    }
+    return out;
   }
 
   interface VisualEdge {
@@ -82,6 +95,7 @@
       const parent = rgId(n.scope.resource_group);
       const prefixes = vnetPrefixes(n);
 
+      const extraProps = otherProps(n);
       if (n.kind === "vnet" && prefixes.length > 1) {
         vnetPrefixesByKey[key] = prefixes;
         prefixes.forEach((p, i) => {
@@ -97,6 +111,7 @@
               status: n.status.kind,
               cidr: p,
               range: cidrToRange(p) ? `${cidrToRange(p)!.first} – ${cidrToRange(p)!.last}` : undefined,
+              extraProps,
             },
           });
         });
@@ -114,6 +129,7 @@
             status: n.status.kind,
             cidr,
             range: cidr && cidrToRange(cidr) ? `${cidrToRange(cidr)!.first} – ${cidrToRange(cidr)!.last}` : undefined,
+            extraProps,
           },
         });
       }
@@ -154,6 +170,9 @@
       const r = cidrToRange(data.cidr);
       return r ? ` (${r.count})` : "";
     })();
+    const extras = (data.extraProps ?? []).slice(0, 3)
+      .map(([k, v]) => `<div class="azn-prop"><span class="azn-pk">${escapeHtml(k)}:</span> ${escapeHtml(v)}</div>`)
+      .join("");
     return `
       <div class="azn">
         <div class="azn-head">
@@ -162,6 +181,7 @@
         </div>
         ${cidr ? `<div class="azn-cidr">${escapeHtml(cidr)}${countSuffix}</div>` : ""}
         ${range ? `<div class="azn-range">${escapeHtml(range)}</div>` : ""}
+        ${extras}
       </div>`;
   }
 
@@ -301,4 +321,6 @@
   :global(.azn-name) { font-weight: 700; font-size: 12px; color: #0b2447; }
   :global(.azn-cidr) { color: #c9184a; font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 2px; }
   :global(.azn-range) { color: #444; font-size: 10px; font-variant-numeric: tabular-nums; }
+  :global(.azn-prop) { color: #555; font-size: 10px; margin-top: 1px; }
+  :global(.azn-pk) { color: #888; }
 </style>

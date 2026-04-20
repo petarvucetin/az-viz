@@ -22,6 +22,18 @@
     return [];
   })();
 
+  // All non-cidr props, for the "Properties" section.
+  $: otherProps = (() => {
+    const out: Array<[string, string]> = [];
+    const p = selected?.props ?? {};
+    for (const [k, v] of Object.entries(p)) {
+      if (k === "cidr") continue;
+      if (typeof v === "string") out.push([k, v]);
+      else if (Array.isArray(v)) out.push([k, v.filter(x => typeof x === "string").join(", ")]);
+    }
+    return out;
+  })();
+
   // Availability per spec §5.4.
   $: showRemove = !!selected && isDeclared;
   $: showVerify = !!selected;
@@ -82,6 +94,13 @@
           {#if rangeFor(cidr)}
             <div class="row"><span class="k">Range</span><span class="v range">{rangeFor(cidr)}</span></div>
           {/if}
+        {/each}
+      {/if}
+
+      {#if otherProps.length > 0}
+        <div class="divider"></div>
+        {#each otherProps as [k, v]}
+          <div class="row"><span class="k">{k}</span><span class="v">{v}</span></div>
         {/each}
       {/if}
     </div>
