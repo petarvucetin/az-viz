@@ -447,6 +447,7 @@
   :global(.azn-pill[data-k="vnet-peering"])  { background:#ecfccb; color:#3f6212; border-color:#84cc16; }
   :global(.azn-pill[data-k="dns-resolver"])  { background:#ede9fe; color:#5b21b6; border-color:#8b5cf6; }
   :global(.azn-pill[data-k="private-dns-zone"]) { background:#f5f3ff; color:#4c1d95; border-color:#7c3aed; }
+  :global(.azn-pill[data-k="private-dns-link"]) { background:#ede9fe; color:#5b21b6; border-color:#8b5cf6; }
   :global(.azn-name) { font-weight: 700; font-size: 13px; color: #0b2447; letter-spacing: -0.01em; text-align: center; word-break: break-all; }
   :global(.azn-cidr) { color: #c9184a; font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 2px; }
   :global(.azn-range) { color: #444; font-size: 10px; font-variant-numeric: tabular-nums; }

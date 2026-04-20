@@ -47,6 +47,7 @@ fn kind_to_az_subcommand(kind: NodeKind) -> &'static str {
         NodeKind::VnetPeering => "vnet peering",
         NodeKind::DnsResolver => "dns-resolver",
         NodeKind::PrivateDnsZone => "private-dns zone",
+        NodeKind::PrivateDnsLink => "private-dns link vnet",
         NodeKind::ResourceGroup => "group",
     }
 }

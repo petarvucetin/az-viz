@@ -120,6 +120,7 @@
   .cmd-kind[data-k="vnet-peering"]  { background:#ecfccb; color:#3f6212; border-color:#84cc16; }
   .cmd-kind[data-k="dns-resolver"]  { background:#ede9fe; color:#5b21b6; border-color:#8b5cf6; }
   .cmd-kind[data-k="private-dns-zone"] { background:#f5f3ff; color:#4c1d95; border-color:#7c3aed; }
+  .cmd-kind[data-k="private-dns-link"] { background:#ede9fe; color:#5b21b6; border-color:#8b5cf6; }
   .cmd-name { font-family:monospace; color:#0b2447; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .err { color:#b53030; font-size:12px; margin-top:6px; white-space:pre-wrap; }
 </style>

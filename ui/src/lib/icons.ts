@@ -39,6 +39,8 @@ export const KIND_ICONS: Record<NodeKind, string> = {
   "dns-resolver": svgDataUrl(`<circle cx="8" cy="8" r="6"/><path d="M2 8 H14 M8 2 Q11 5 11 8 Q11 11 8 14 M8 2 Q5 5 5 8 Q5 11 8 14"/>`),
   // Globe with lock (private DNS zone)
   "private-dns-zone": svgDataUrl(`<circle cx="8" cy="8" r="5.5"/><rect x="6" y="7" width="4" height="4" rx="0.5"/><path d="M7 7 V5.5 Q7 4.5 8 4.5 Q9 4.5 9 5.5 V7"/>`),
+  // Two connected rings with a globe (private DNS link)
+  "private-dns-link": svgDataUrl(`<circle cx="4" cy="8" r="2.5"/><circle cx="12" cy="8" r="2.5"/><path d="M6.5 8 L9.5 8"/>`),
   // Folder (Resource group)
   "rg": svgDataUrl(`<path d="M1.5 4 H6 L7.5 5.5 H14.5 V13 Q14.5 14 13.5 14 H2.5 Q1.5 14 1.5 13 Z"/>`),
 };

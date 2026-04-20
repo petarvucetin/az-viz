@@ -40,6 +40,7 @@ fn kind_from_str(s: &str) -> Option<NodeKind> {
         "vnet-peering" => NodeKind::VnetPeering,
         "dns-resolver" => NodeKind::DnsResolver,
         "private-dns-zone" => NodeKind::PrivateDnsZone,
+        "private-dns-link" => NodeKind::PrivateDnsLink,
         "rg" => NodeKind::ResourceGroup,
         _ => return None,
     })

@@ -113,5 +113,16 @@
     "produces": { "kind": "private-dns-zone", "name_from": "--name" },
     "scope":    { "rg": "--resource-group" },
     "refs":     []
+  },
+  "network private-dns link vnet create": {
+    "produces": { "kind": "private-dns-link", "name_from": "--name" },
+    "scope":    { "rg": "--resource-group" },
+    "refs": [
+      { "kind": "private-dns-zone", "via": "--zone-name",       "required": true },
+      { "kind": "vnet",             "via": "--virtual-network", "required": true }
+    ],
+    "props": {
+      "registration-enabled": "--registration-enabled"
+    }
   }
 }

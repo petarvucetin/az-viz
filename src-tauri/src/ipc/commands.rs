@@ -202,6 +202,15 @@ pub async fn do_verify_node(
                     None => return Err(format!("vnet peering {} has no parent VNet in the graph", logical_key)),
                 }
             }
+            NodeKind::PrivateDnsLink => {
+                let parent = g.parents(&node_id).find_map(|p| {
+                    if matches!(p.kind, NodeKind::PrivateDnsZone) { Some(p.name.clone()) } else { None }
+                });
+                match parent {
+                    Some(n) => Some(n),
+                    None => return Err(format!("private-dns link {} has no parent private-dns-zone in the graph", logical_key)),
+                }
+            }
             _ => None,
         }
     };
@@ -260,6 +269,17 @@ pub async fn do_verify_node(
             a.extend([
                 "--name".into(), node_id.name.clone(),
                 "--resource-group".into(), node_id.resource_group.clone(),
+            ]);
+            if let Some(ref sub) = node_id.subscription { a.extend(["--subscription".into(), sub.clone()]); }
+            a
+        }
+        NodeKind::PrivateDnsLink => {
+            let zone = parent_name.as_ref().expect("private-dns-link parent checked above");
+            let mut a: Vec<String> = ["network", "private-dns", "link", "vnet", "show"].iter().map(|s| s.to_string()).collect();
+            a.extend([
+                "--name".into(), node_id.name.clone(),
+                "--resource-group".into(), node_id.resource_group.clone(),
+                "--zone-name".into(), zone.clone(),
             ]);
             if let Some(ref sub) = node_id.subscription { a.extend(["--subscription".into(), sub.clone()]); }
             a
