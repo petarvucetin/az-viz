@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 180" width="260" height="180" role="img" aria-label="Visualize: auto-layout via ELK, draggable, persistent.">
+  <style>
+    .bg { fill: #0d1117; }
+    .card { fill: #161b22; stroke: #30363d; stroke-width: 1; }
+    .label { fill: #C9D1D9; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 16px; font-weight: 600; }
+    .sub { fill: #8B949E; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 11px; }
+    .node { fill: #0d1117; stroke: #0078D4; stroke-width: 2; }
+    .edge { fill: none; stroke: #0078D4; stroke-width: 1.5; }
+  </style>
+  <rect width="260" height="180" class="bg"/>
+  <rect x="8" y="8" width="244" height="164" rx="12" class="card"/>
+  <g transform="translate(102, 26)">
+    <circle cx="10" cy="10" r="7" class="node"/>
+    <circle cx="46" cy="10" r="7" class="node"/>
+    <circle cx="28" cy="38" r="7" class="node"/>
+    <line x1="17" y1="10" x2="39" y2="10" class="edge"/>
+    <line x1="13" y1="17" x2="24" y2="32" class="edge"/>
+    <line x1="43" y1="17" x2="32" y2="32" class="edge"/>
+  </g>
+  <text x="130" y="104" text-anchor="middle" class="label">Visualize</text>
+  <text x="130" y="128" text-anchor="middle" class="sub">Auto-layout via ELK.</text>
+  <text x="130" y="144" text-anchor="middle" class="sub">Draggable. Persistent.</text>
+</svg>
