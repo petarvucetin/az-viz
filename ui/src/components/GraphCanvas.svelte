@@ -170,6 +170,10 @@
   }
 
   onMount(() => {
+    // Suppress the webview's native context menu on the canvas so Cytoscape's
+    // cxttap event drives our custom menu without the native one overlaying.
+    container.addEventListener("contextmenu", (e) => e.preventDefault());
+
     cy = cytoscape({
       container,
       wheelSensitivity: 0.2,
