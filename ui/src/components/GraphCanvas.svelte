@@ -3,7 +3,7 @@
   import cytoscape from "cytoscape";
   import elk from "cytoscape-elk";
   import nodeHtmlLabel from "cytoscape-node-html-label";
-  import { nodes, edges, selectedNodeKey, fitSignal } from "../lib/store";
+  import { nodes, edges, selectedNodeKey, fitSignal, layoutSignal } from "../lib/store";
   import type { Node as GNode, Edge as GEdge, NodeKind } from "../lib/types";
   import { cidrToRange, cidrContains } from "../lib/cidr";
 
@@ -396,6 +396,25 @@
   // Fit-to-screen signal from Toolbar.
   $: if (cy && $fitSignal > 0) {
     cy.fit(undefined, 30);
+  }
+
+  // Re-layout signal from Toolbar.
+  $: if (cy && $layoutSignal > 0) {
+    cy.layout({
+      name: "elk",
+      elk: {
+        "algorithm": "layered",
+        "elk.direction": "DOWN",
+        "elk.layered.spacing.nodeNodeBetweenLayers": 40,
+        "elk.spacing.nodeNode": 20,
+        "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+        "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+        "elk.edgeRouting": "ORTHOGONAL",
+        "elk.layered.mergeEdges": "true",
+        "elk.layered.unnecessaryBendpoints": "true",
+      },
+      nodeDimensionsIncludeLabels: false,
+    } as any).run();
   }
 
   onDestroy(() => {

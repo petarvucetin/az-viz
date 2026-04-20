@@ -25,3 +25,6 @@ export const lastError = writable<string | null>(null);
 
 // Incremented by Toolbar to trigger GraphCanvas to fit the viewport.
 export const fitSignal = writable<number>(0);
+
+// Incremented by Toolbar to trigger GraphCanvas to re-run its layout.
+export const layoutSignal = writable<number>(0);

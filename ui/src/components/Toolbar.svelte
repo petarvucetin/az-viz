@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { getVersion } from "@tauri-apps/api/app";
   import { ipc } from "../lib/ipc";
-  import { nodes, edges, fitSignal } from "../lib/store";
+  import { nodes, edges, fitSignal, layoutSignal } from "../lib/store";
   let running = false;
   let version = "";
 
@@ -21,6 +21,7 @@
     nodes.set(snap.nodes); edges.set(snap.edges);
   }
   function fit() { fitSignal.update(n => n + 1); }
+  function relayout() { layoutSignal.update(n => n + 1); }
 </script>
 
 <div class="toolbar">
@@ -29,6 +30,7 @@
   <button on:click={dry} disabled={running}>Dry-run</button>
   <button on:click={run} disabled={running} class="primary">Run</button>
   <button on:click={fit}>Fit</button>
+  <button on:click={relayout}>Re-layout</button>
   <button disabled>Emit script</button>
   <button disabled={!running}>Stop</button>
   <span class="spacer"></span>

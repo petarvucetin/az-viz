@@ -29,8 +29,24 @@ pub fn add_command(line: String, state: tauri::State<SessionState>) -> Result<St
 #[tauri::command]
 pub fn snapshot(state: tauri::State<SessionState>) -> Result<GraphSnapshot, String> {
     let g = state.graph.lock().map_err(|e| e.to_string())?;
+    // Return nodes in command-insertion order (first command that produced each
+    // node wins its position), with orphaned ghost nodes appended at the end.
+    let mut seen: std::collections::HashSet<crate::model::NodeId> = std::collections::HashSet::new();
+    let mut ordered: Vec<Node> = Vec::new();
+    for c in g.commands() {
+        if let Some(n) = g.node(&c.produces) {
+            if seen.insert(n.id.clone()) {
+                ordered.push(n.clone());
+            }
+        }
+    }
+    for n in g.nodes() {
+        if seen.insert(n.id.clone()) {
+            ordered.push(n.clone());
+        }
+    }
     Ok(GraphSnapshot {
-        nodes: g.nodes().cloned().collect(),
+        nodes: ordered,
         edges: g.edges().cloned().collect(),
     })
 }
