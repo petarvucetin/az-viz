@@ -25,6 +25,11 @@ pub fn commit(graph: &mut Graph, parsed: Parsed) -> Result<(), ParseError> {
             })?;
         }
     }
+    for v in parsed.new_variables {
+        if graph.variable(&v.name).is_none() {
+            graph.upsert_variable(v);
+        }
+    }
     for e in parsed.new_edges {
         // Edges may now duplicate if two commands both create the same "ref" edge.
         // Silently ignore Duplicate edges.

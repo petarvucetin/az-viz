@@ -14,14 +14,37 @@ pub enum AzEvent {
     Canceled,
 }
 
+/// True when `az`'s stderr tail indicates the user needs to run `az login`.
+/// Conservative: matches the stable phrases Azure CLI emits on empty/expired
+/// token cache. Case-insensitive for the marquee phrase; AADSTS codes are
+/// already uppercase in Azure output.
+pub fn looks_like_not_logged_in(stderr: &str) -> bool {
+    let lower = stderr.to_ascii_lowercase();
+    if lower.contains("please run 'az login'") || lower.contains("please run \"az login\"") {
+        return true;
+    }
+    // Refresh-token-expired families that surface without the "please run" hint.
+    for code in ["AADSTS700082", "AADSTS700084", "AADSTS50173", "AADSTS50078"] {
+        if stderr.contains(code) { return true; }
+    }
+    false
+}
+
 #[derive(Clone)]
 pub struct AzConfig {
     pub exe: String,
     pub timeout: Duration,
 }
 
+/// Name of the Azure CLI executable to invoke. On Windows, the CLI ships as
+/// `az.cmd` (a batch wrapper around Python); Rust's `Command::new("az")`
+/// only resolves `.exe` on PATH, so we target `az.cmd` directly.
+pub fn default_az_exe() -> &'static str {
+    if cfg!(windows) { "az.cmd" } else { "az" }
+}
+
 impl Default for AzConfig {
-    fn default() -> Self { Self { exe: "az".into(), timeout: Duration::from_secs(300) } }
+    fn default() -> Self { Self { exe: default_az_exe().into(), timeout: Duration::from_secs(300) } }
 }
 
 pub async fn spawn_az(
@@ -116,6 +139,15 @@ mod tests {
             }
         }
         assert!(saw_stdout && saw_exit);
+    }
+
+    #[test]
+    fn detects_not_logged_in_stderr() {
+        assert!(looks_like_not_logged_in("Please run 'az login' to setup account."));
+        assert!(looks_like_not_logged_in("blah\nplease run 'az login' now\n"));
+        assert!(looks_like_not_logged_in("AADSTS700082: token expired."));
+        assert!(!looks_like_not_logged_in("ResourceNotFound: could not find vnet foo"));
+        assert!(!looks_like_not_logged_in(""));
     }
 
     #[serial]

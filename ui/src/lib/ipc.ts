@@ -5,7 +5,12 @@ import { appState } from "./store.svelte";
 
 async function withErrorStore<T>(p: Promise<T>): Promise<T> {
   try { appState.lastError = null; return await p; }
-  catch (e) { appState.lastError = String(e); throw e; }
+  catch (e) {
+    const s = String(e);
+    // "not_logged_in" is surfaced via AuthBanner, not as a generic error toast.
+    appState.lastError = s === "not_logged_in" ? null : s;
+    throw e;
+  }
 }
 
 export const ipc = {
@@ -19,10 +24,19 @@ export const ipc = {
   runLive: () => invoke<void>("run_live"),
   removeCommand: (id: string) =>
     withErrorStore(invoke<void>("remove_command", { id })),
+  clearAll: () => withErrorStore(invoke<void>("clear_all")),
+  setVariableBody: (name: string, body: string) =>
+    withErrorStore(invoke<void>("set_variable_body", { args: { name, body } })),
+  refreshVariable: (name: string) =>
+    withErrorStore(invoke<string | null>("refresh_variable", { name })),
+  removeVariable: (name: string) =>
+    withErrorStore(invoke<void>("remove_variable", { name })),
   verifyNode: (logicalKey: string) =>
     withErrorStore(invoke<NodeStatus>("verify_node", { logicalKey })),
   executeNode: (logicalKey: string) =>
     withErrorStore(invoke<void>("execute_node", { logicalKey })),
+  azLogin: () => withErrorStore(invoke<void>("az_login")),
+  azLoginCancel: () => invoke<void>("az_login_cancel"),
 };
 
 export const onRunEvent = (cb: (ev: RunEvent) => void) =>

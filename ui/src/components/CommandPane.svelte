@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { ask } from "@tauri-apps/api/dialog";
   import { ipc } from "../lib/ipc";
   import { appState } from "../lib/store.svelte";
   import type { Node as GNode } from "../lib/types";
@@ -35,10 +36,12 @@
     const cmds = splitLines(line);
     if (cmds.length === 0) return;
 
+    const addedCommandIds: string[] = [];
     let processed = 0;
     for (const cmd of cmds) {
       try {
-        await ipc.addCommand(cmd);
+        const id = await ipc.addCommand(cmd);
+        addedCommandIds.push(id);
         processed++;
       } catch (e) {
         const remaining = cmds.slice(processed);
@@ -46,15 +49,63 @@
         const preview = cmd.length > 80 ? cmd.slice(0, 77) + "..." : cmd;
         localErr = `Line ${processed + 1} (${preview}): ${e}`;
         const snap = await ipc.snapshot();
-        appState.nodes = snap.nodes; appState.edges = snap.edges;
+        appState.applySnapshot(snap);
         return;
       }
     }
 
     line = "";
     const snap = await ipc.snapshot();
-    appState.nodes = snap.nodes; appState.edges = snap.edges;
+    appState.applySnapshot(snap);
     appState.lastError = null;
+
+    // Fire a background existence check per added command. Non-blocking: the
+    // UI keeps responding while `az ... show` runs. Results appear in the Log
+    // pane and each node's status is updated in-place by the backend.
+    void autoVerifyAddedCommands(addedCommandIds);
+  }
+
+  async function autoVerifyAddedCommands(commandIds: string[]): Promise<void> {
+    if (commandIds.length === 0) return;
+    const nodesByCmd = new Map<string, GNode>();
+    for (const n of appState.nodes) {
+      if (n.origin === "Declared" && n.command_id) nodesByCmd.set(n.command_id, n);
+    }
+    // Log the add for every newly-declared node before firing verifies.
+    for (const cid of commandIds) {
+      const node = nodesByCmd.get(cid);
+      if (node) appState.appendLog(`[added] ${node.kind}/${node.name}`);
+    }
+    await Promise.all(commandIds.map(async (cid) => {
+      const node = nodesByCmd.get(cid);
+      if (!node) return;
+      const label = `${node.kind}/${node.name}`;
+      appState.appendLog(`[checking] ${label}`);
+      try {
+        const status = await ipc.verifyNode(keyOf(node.id));
+        appState.appendLog(`[verify] ${label}: ${status.kind}`);
+      } catch {
+        // not_logged_in is surfaced via AuthBanner; other errors via lastError.
+      }
+    }));
+    const snap = await ipc.snapshot();
+    appState.applySnapshot(snap);
+  }
+
+  async function clearAll() {
+    if (appState.nodes.length === 0) return;
+    const ok = await ask("Remove all commands from the graph?", {
+      title: "Clear all",
+      type: "warning",
+    });
+    if (!ok) return;
+    try {
+      await ipc.clearAll();
+      const snap = await ipc.snapshot();
+      appState.applySnapshot(snap);
+      appState.selectedNodeKey = null;
+      appState.appendLog("[cleared] all commands removed");
+    } catch { /* lastError set by wrapper */ }
   }
 
   let err = $derived(localErr || appState.lastError || "");
@@ -73,9 +124,32 @@
       const parent = pk ?? `rg:${n.scope.resource_group}`;
       (childrenByParent[parent] ??= []).push(k);
     }
+
+    // Index variables by name and nest each referenced variable under the
+    // consumer's logical key. If a variable has multiple consumers, it
+    // appears under each.
+    const varByName: Record<string, import("../lib/types").Variable> = {};
+    for (const v of appState.variables) varByName[v.name] = v;
+    const childVars: Record<string, string[]> = {};
+    const referencedVarNames = new Set<string>();
+    for (const [consumerKey, names] of Object.entries(appState.varConsumers)) {
+      for (const name of names) {
+        referencedVarNames.add(name);
+        (childVars[consumerKey] ??= []).push(`var:${name}`);
+      }
+    }
+    // Orphan variables (declared but no consumer references them yet) surface
+    // under a synthetic top-level "Variables" group so they're still editable.
+    const orphanVars = appState.variables
+      .filter(v => !referencedVarNames.has(v.name))
+      .map(v => `var:${v.name}`);
+
     const rgs = Array.from(new Set(all.map(n => n.scope.resource_group))).sort();
     const blocked = computeBlocked(all, edges);
-    return { rgs, childrenByParent, nodeByKey, blocked, declaredCount };
+    return {
+      rgs, childrenByParent, nodeByKey, blocked, declaredCount,
+      childVars, varByName, orphanVars,
+    };
   });
 
   let expanded = $state<Record<string, boolean>>({});
@@ -84,12 +158,17 @@
     else expanded[k] = true;
   }
 
-  // Default-expand RG rows the first time we see them.
+  // Default-expand RG rows and any node that has variable children so the
+  // variable is visible the moment the consumer command is added.
   $effect(() => {
     const rgs = tree.rgs;
+    const consumerKeys = Object.keys(appState.varConsumers);
     untrack(() => {
       for (const rg of rgs) {
         const k = `rg:${rg}`;
+        if (expanded[k] === undefined) expanded[k] = true;
+      }
+      for (const k of consumerKeys) {
         if (expanded[k] === undefined) expanded[k] = true;
       }
     });
@@ -99,8 +178,20 @@
 <div class="pane">
   <label class="lbl">New command(s)</label>
   <textarea bind:value={line} rows="6" placeholder="az network vnet create --name v --resource-group rg&#10;az network vnet subnet create --name s --resource-group rg --vnet-name v --address-prefixes 10.0.0.0/27"></textarea>
-  <button onclick={add} disabled={!line.trim()}>Add</button>
+  <div class="btn-row">
+    <button onclick={add} disabled={!line.trim()}>Add</button>
+    <button class="secondary" onclick={clearAll} disabled={tree.declaredCount === 0} title="Remove all commands">Clear all</button>
+  </div>
   {#if err}<div class="err">{err}</div>{/if}
+
+  {#if tree.orphanVars.length > 0}
+    <label class="lbl">Variables (unused)</label>
+    <ul class="tree">
+      {#each tree.orphanVars as vk (vk)}
+        {@render varLeaf(vk)}
+      {/each}
+    </ul>
+  {/if}
 
   <label class="lbl">Resources ({tree.declaredCount})</label>
   <ul class="tree">
@@ -129,15 +220,41 @@
   </ul>
 </div>
 
+{#snippet varLeaf(varKey: string)}
+  {@const name = varKey.slice(4)}
+  {@const v = tree.varByName[name]}
+  {#if v}
+    {@const isGhost = v.origin === "Ghost"}
+    <li class="tnode">
+      <div class="row" class:selected={varKey === appState.selectedNodeKey} class:dim={isGhost}>
+        <span class="caret no-kids"></span>
+        <span
+          class="leaf"
+          onclick={() => appState.selectedNodeKey = varKey}
+          onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") appState.selectedNodeKey = varKey; }}
+          role="button"
+          tabindex="0"
+          title={isGhost ? "value not set — click to fill in" : undefined}
+        >
+          <span class="cmd-kind kind-var">var</span>
+          <span class="cmd-name">${name}</span>
+        </span>
+      </div>
+    </li>
+  {/if}
+{/snippet}
+
 {#snippet branch(key: string)}
   {@const n = tree.nodeByKey[key]}
   {@const kids = tree.childrenByParent[key] ?? []}
+  {@const vars = tree.childVars[key] ?? []}
   {#if n}
     {@const ghost = n.origin === "Ghost"}
     {@const blocked = tree.blocked.has(key)}
+    {@const hasChildren = kids.length > 0 || vars.length > 0}
     <li class="tnode">
       <div class="row" class:selected={key === appState.selectedNodeKey} class:dim={blocked}>
-        {#if kids.length > 0}
+        {#if hasChildren}
           <span
             class="caret"
             onclick={(e) => { e.stopPropagation(); toggle(key); }}
@@ -160,10 +277,13 @@
           <span class="cmd-name">{n.name}</span>
         </span>
       </div>
-      {#if expanded[key] && kids.length > 0}
+      {#if expanded[key] && hasChildren}
         <ul class="children">
           {#each kids as ck (ck)}
             {@render branch(ck)}
+          {/each}
+          {#each vars as vk (vk)}
+            {@render varLeaf(vk)}
           {/each}
         </ul>
       {/if}
@@ -175,6 +295,10 @@
   .pane { padding:10px; background:#fafafa; height:100%; box-sizing:border-box; overflow:auto; }
   .lbl { display:block; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:#666; margin:10px 0 4px; }
   textarea { width:100%; font-family:monospace; font-size:12px; box-sizing:border-box; }
+  .btn-row { display:flex; gap:6px; margin-top:6px; }
+  .btn-row button { flex:1; padding:6px; margin:0; }
+  .btn-row button.secondary { background:#f5f5f5; color:#444; border:1px solid #ccc; }
+  .btn-row button.secondary:hover:not([disabled]) { background:#fdf0f0; border-color:#b53030; color:#b53030; }
   button { margin-top:6px; width:100%; padding:6px; }
   .tree, .children { list-style:none; padding:0; margin:0; font-size:12px; }
   .children { padding-left:14px; border-left:1px dotted #d0d7e2; margin-left:5px; }
@@ -225,6 +349,7 @@
   .cmd-kind[data-k="dns-resolver"]  { background:#ede9fe; color:#5b21b6; border-color:#8b5cf6; }
   .cmd-kind[data-k="private-dns-zone"] { background:#f5f3ff; color:#4c1d95; border-color:#7c3aed; }
   .cmd-kind[data-k="private-dns-link"] { background:#ede9fe; color:#5b21b6; border-color:#8b5cf6; }
+  .cmd-kind.kind-var { background:#fff7ed; color:#9a3412; border-color:#fb923c; }
   .cmd-name { font-family:monospace; color:#0b2447; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .err { color:#b53030; font-size:12px; margin-top:6px; white-space:pre-wrap; }
 </style>

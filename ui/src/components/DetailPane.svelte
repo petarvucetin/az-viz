@@ -8,6 +8,86 @@
     return `${id.kind}/${id.name}@rg:${id.resource_group}${sub}`;
   }
 
+  let selectedVarName = $derived(
+    appState.selectedNodeKey?.startsWith("var:") ? appState.selectedNodeKey.slice(4) : null
+  );
+  let selectedVariable = $derived(
+    selectedVarName ? appState.variables.find(v => v.name === selectedVarName) ?? null : null
+  );
+  let varBodyDraft = $state("");
+  let refreshingVar = $state(false);
+
+  // Reset the draft textarea whenever the selection changes.
+  $effect(() => {
+    const v = selectedVariable;
+    if (!v) { varBodyDraft = ""; return; }
+    if (v.body.mode === "command") varBodyDraft = "$(" + v.body.argv.join(" ") + ")";
+    else if (v.body.mode === "literal") varBodyDraft = v.body.value;
+    else varBodyDraft = "";
+  });
+
+  async function saveVariable() {
+    if (!selectedVariable) return;
+    try {
+      await ipc.setVariableBody(selectedVariable.name, varBodyDraft);
+      appState.appendLog(`[var] ${selectedVariable.name}: body saved`);
+      const snap = await ipc.snapshot();
+      appState.applySnapshot(snap);
+    } catch { /* lastError set by wrapper */ }
+  }
+
+  async function executeVariable() {
+    if (!selectedVariable) return;
+    refreshingVar = true;
+    const name = selectedVariable.name;
+    const mode = selectedVariable.body.mode;
+    appState.appendLog(
+      mode === "command" ? `[var] ${name}: executing $(…)` : `[var] ${name}: resolving literal`
+    );
+    try {
+      const val = await ipc.refreshVariable(name);
+      appState.appendLog(`[var] ${name} = ${val ?? "∅"}`);
+      const snap = await ipc.snapshot();
+      appState.applySnapshot(snap);
+    } catch (e) {
+      // `not_logged_in` is surfaced via AuthBanner; suppress its duplicate log.
+      const msg = String(e);
+      if (msg !== "not_logged_in") {
+        const lines = msg.split(/\r?\n/);
+        appState.appendLog(`[error] ${lines[0]}`);
+        for (const rest of lines.slice(1)) {
+          if (rest.trim() !== "") appState.appendLog(`        ${rest}`);
+        }
+      }
+    }
+    finally { refreshingVar = false; }
+  }
+
+  let executeBtnLabel = $derived.by(() => {
+    if (refreshingVar) return selectedVariable?.body.mode === "command" ? "Executing…" : "Resolving…";
+    if (!selectedVariable) return "Execute";
+    if (selectedVariable.body.mode === "command") return "Execute";
+    if (selectedVariable.body.mode === "literal") return "Resolve";
+    return "Execute";
+  });
+  let executeBtnTitle = $derived(
+    selectedVariable?.body.mode === "command"
+      ? "Run the $(…) command and cache its stdout as this variable's value"
+      : selectedVariable?.body.mode === "literal"
+        ? "Cache the literal value (no az call)"
+        : "Set a value first"
+  );
+
+  async function removeVariable() {
+    if (!selectedVariable) return;
+    try {
+      await ipc.removeVariable(selectedVariable.name);
+      const snap = await ipc.snapshot();
+      appState.applySnapshot(snap);
+      appState.selectedNodeKey = null;
+    } catch { /* lastError */ }
+  }
+
   let selected = $derived(appState.nodes.find(n => keyOf(n.id) === appState.selectedNodeKey) ?? null);
   let statusKind = $derived(selected?.status.kind ?? "");
   let isDeclared = $derived(selected?.origin === "Declared");
@@ -42,8 +122,7 @@
 
   async function refreshSnapshot() {
     const snap = await ipc.snapshot();
-    appState.nodes = snap.nodes;
-    appState.edges = snap.edges;
+    appState.applySnapshot(snap);
   }
 
   async function remove() {
@@ -54,7 +133,12 @@
 
   async function verify() {
     if (!selected) return;
-    try { await ipc.verifyNode(keyOf(selected.id)); await refreshSnapshot(); }
+    const label = `${selected.kind}/${selected.name}`;
+    try {
+      const status = await ipc.verifyNode(keyOf(selected.id));
+      appState.appendLog(`[verify] ${label}: ${status.kind}`);
+      await refreshSnapshot();
+    }
     catch { /* lastError set by wrapper */ }
   }
 
@@ -71,6 +155,40 @@
 </script>
 
 <div class="pane">
+  {#if selectedVariable}
+    <div class="lbl">Variable</div>
+    <div class="info">
+      <div class="title"><b>${selectedVariable.name}</b></div>
+      <div class="row"><span class="k">Origin</span><span class="v">{selectedVariable.origin}</span></div>
+      <div class="row"><span class="k">Mode</span><span class="v">{selectedVariable.body.mode}</span></div>
+      <div class="divider"></div>
+      <div class="vbody">
+        <label class="lbl" for="vbody">Value or <code>$(az …)</code> command</label>
+        <textarea id="vbody" bind:value={varBodyDraft} rows="3" placeholder="$(az network vnet subnet show -g rg --vnet-name v -n s --query id -o tsv)"></textarea>
+      </div>
+      <div class="divider"></div>
+      <label class="lbl" for="vresolved">Resolved</label>
+      <textarea
+        id="vresolved"
+        class="resolved-box"
+        class:empty={selectedVariable.resolved === null || selectedVariable.resolved === undefined}
+        readonly
+        rows="3"
+        placeholder="(not resolved)"
+        value={selectedVariable.resolved ?? ""}
+      ></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick={saveVariable}>Save</button>
+      {#if selectedVariable.body.mode === "command"}
+        <button class="btn" onclick={executeVariable} title={executeBtnTitle}
+                disabled={refreshingVar}>
+          {executeBtnLabel}
+        </button>
+      {/if}
+      <button class="btn destructive" onclick={removeVariable}>Remove</button>
+    </div>
+  {:else}
   <div class="lbl">Selected node</div>
   {#if selected}
     <div class="info">
@@ -117,6 +235,7 @@
   {:else}
     <div class="muted">No node selected</div>
   {/if}
+  {/if}
 </div>
 
 <style>
@@ -145,4 +264,18 @@
   .btn[disabled] { opacity:.45; cursor:default; }
   .btn.destructive { color:#b53030; }
   .btn.destructive:hover:not([disabled]) { background:#fdf0f0; border-color:#b53030; }
+  .vbody { margin-top:4px; }
+  .vbody textarea { width:100%; box-sizing:border-box; font-family:monospace; font-size:11px; resize:vertical; }
+  .resolved-box {
+    width:100%; box-sizing:border-box;
+    font-family:monospace; font-size:11px;
+    resize:vertical;
+    background:#fff; color:#0b2447;
+    border:1px solid #ccc; border-radius:3px;
+    padding:4px;
+    word-break:break-all;
+    margin-top:2px;
+  }
+  .resolved-box.empty { color:#888; font-style:italic; }
+  code { font-size:11px; background:#f5f5f5; padding:1px 3px; border-radius:2px; }
 </style>

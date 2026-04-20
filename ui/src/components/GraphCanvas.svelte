@@ -9,6 +9,7 @@
   import { computeBlocked } from "../lib/blocking";
   import ResourceNode from "./ResourceNode.svelte";
   import ResourceGroupNode from "./ResourceGroupNode.svelte";
+  import VariableNode from "./VariableNode.svelte";
   import FlowActions from "./FlowActions.svelte";
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -72,6 +73,7 @@
   const nodeTypes = {
     resource: ResourceNode as any,
     rg: ResourceGroupNode as any,
+    variable: VariableNode as any,
   };
 
   // ─── Local state ────────────────────────────────────────────────────────────
@@ -82,7 +84,13 @@
 
   // ─── Build + layout ─────────────────────────────────────────────────────────
 
-  function buildElements(ns: GNode[], es: GEdge[], selKey: string | null): { nodes: SFNode[]; edges: SFEdge[] } {
+  function buildElements(
+    ns: GNode[],
+    es: GEdge[],
+    variables: import("../lib/types").Variable[],
+    varConsumers: Record<string, string[]>,
+    selKey: string | null,
+  ): { nodes: SFNode[]; edges: SFEdge[] } {
     const blocked = computeBlocked(ns, es);
     const rgs = new Set<string>();
     for (const n of ns) rgs.add(n.scope.resource_group);
@@ -161,6 +169,45 @@
       }
     }
 
+    // Variable nodes: attach each referenced variable inside the RG of its
+    // first consumer. Draw an edge from the consumer → variable so ELK
+    // places them adjacently. A variable with multiple consumers renders
+    // once with multiple incoming edges.
+    const varEdgesFromConsumer: Array<{ consumerKey: string; varName: string }> = [];
+    const varParentRg: Record<string, string> = {};
+    for (const [consumerKey, names] of Object.entries(varConsumers)) {
+      const consumer = nodesByKey[consumerKey];
+      if (!consumer) continue;
+      for (const name of names) {
+        if (!(name in varParentRg)) varParentRg[name] = rgId(consumer.scope.resource_group);
+        varEdgesFromConsumer.push({ consumerKey, varName: name });
+      }
+    }
+    const varByName: Record<string, import("../lib/types").Variable> = {};
+    for (const v of variables) varByName[v.name] = v;
+    for (const [name, parent] of Object.entries(varParentRg)) {
+      const v = varByName[name];
+      if (!v) continue;
+      const logicalKey = `var:${name}`;
+      resultNodes.push({
+        id: logicalKey,
+        type: "variable",
+        position: { x: 0, y: 0 },
+        data: {
+          name,
+          resolved: v.resolved,
+          origin: v.origin,
+          logicalKey,
+          selectedDirect: selKey === logicalKey,
+        },
+        parentId: parent,
+        expandParent: true,
+        width: Math.max(120, name.length * 8 + 30),
+        height: 58,
+        selectable: false,
+      });
+    }
+
     const resultEdges: SFEdge[] = es.map((e) => {
       const fromKey = keyOf(e.from);
       const toKey = keyOf(e.to);
@@ -192,12 +239,35 @@
       };
     });
 
+    // Edges consumer → variable. Use a subdued amber stroke so they read as
+    // metadata wiring, not graph topology.
+    for (const { consumerKey, varName } of varEdgesFromConsumer) {
+      const target = `var:${varName}`;
+      const on = selKey !== null && (consumerKey === selKey || target === selKey);
+      resultEdges.push({
+        id: `${consumerKey}~${target}`,
+        source: consumerKey,
+        target,
+        type: "default",
+        style: on
+          ? "stroke:#9a3412;stroke-width:2.5;stroke-dasharray:4 3;"
+          : "stroke:#fb923c;stroke-width:1.3;stroke-dasharray:4 3;",
+        zIndex: on ? 10 : 0,
+        markerEnd: { type: MarkerType.ArrowClosed, color: on ? "#9a3412" : "#fb923c" },
+      });
+    }
+
     return { nodes: resultNodes, edges: resultEdges };
   }
 
-  async function buildAndLayout(ns: GNode[], es: GEdge[], selKey: string | null) {
+  async function buildAndLayout(
+    ns: GNode[], es: GEdge[],
+    variables: import("../lib/types").Variable[],
+    varConsumers: Record<string, string[]>,
+    selKey: string | null,
+  ) {
     const gen = ++layoutGen;
-    const { nodes: rawNodes, edges: rawEdges } = buildElements(ns, es, selKey);
+    const { nodes: rawNodes, edges: rawEdges } = buildElements(ns, es, variables, varConsumers, selKey);
 
     const layoutNodes = rawNodes.map(n => ({
       id: n.id,
@@ -230,7 +300,9 @@
   $effect(() => {
     const ns = appState.nodes;
     const es = appState.edges;
-    buildAndLayout(ns, es, null);
+    const vs = appState.variables;
+    const vc = appState.varConsumers;
+    buildAndLayout(ns, es, vs, vc, null);
   });
 
   // Apply selection-only updates without full ELK re-layout.
@@ -238,15 +310,27 @@
     const selKey = appState.selectedNodeKey;
     untrack(() => {
       sfNodes = sfNodes.map(n => {
-        if (n.type !== "resource") return n;
+        if (n.type !== "resource" && n.type !== "variable") return n;
         const logical = (n.data as any)?.logicalKey;
         const sel = selKey !== null && logical === selKey;
         return { ...n, data: { ...(n.data as any), selectedDirect: sel } };
       });
       sfEdges = sfEdges.map(e => {
+        const isVarEdge = e.target.startsWith("var:");
         const srcLogical = logicalOf(e.source);
-        const tgtLogical = logicalOf(e.target);
+        const tgtLogical = e.target.startsWith("var:") ? e.target : logicalOf(e.target);
         const on = selKey !== null && (srcLogical === selKey || tgtLogical === selKey);
+        if (isVarEdge) {
+          const color = on ? "#9a3412" : "#fb923c";
+          return {
+            ...e,
+            style: on
+              ? "stroke:#9a3412;stroke-width:2.5;stroke-dasharray:4 3;"
+              : "stroke:#fb923c;stroke-width:1.3;stroke-dasharray:4 3;",
+            zIndex: on ? 10 : 0,
+            markerEnd: { type: MarkerType.ArrowClosed, color },
+          };
+        }
         const color = on ? "#0b2447" : "#4a90e2";
         return {
           ...e,
@@ -272,7 +356,7 @@
     if (v !== lastLayoutSignal && v > 0) {
       lastLayoutSignal = v;
       untrack(() => {
-        buildAndLayout(appState.nodes, appState.edges, null);
+        buildAndLayout(appState.nodes, appState.edges, appState.variables, appState.varConsumers, null);
       });
     }
   });

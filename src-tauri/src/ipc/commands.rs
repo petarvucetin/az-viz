@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
-use crate::model::{Edge, Node};
-use crate::parser::{commit as commit_parse, parse};
+use crate::model::{Edge, Node, Variable};
+use crate::parser::{commit as commit_parse, parse_line, ParsedLine};
 use crate::persist::ProjectFile;
 use crate::runner::{dry_run as runner_dry_run, write_script, ScriptFlavor};
 use crate::runner::{live_run, AzConfig, RunEvent};
@@ -12,14 +12,29 @@ use super::state::SessionState;
 pub struct GraphSnapshot {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    pub variables: Vec<Variable>,
+    /// Mapping from a command's logical node key → names of variables the
+    /// command references. Lets the UI nest a variable under its consumer.
+    pub var_consumers: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 #[tauri::command]
 pub fn add_command(line: String, state: tauri::State<SessionState>) -> Result<String, String> {
     let mut g = state.graph.lock().map_err(|e| e.to_string())?;
-    let parsed = parse(&line, &state.argmap, &g).map_err(|e| e.to_string())?;
-    let id = parsed.command.id.clone();
-    commit_parse(&mut g, parsed).map_err(|e| e.to_string())?;
+    let parsed = parse_line(&line, &state.argmap, &g).map_err(|e| e.to_string())?;
+    let id = match parsed {
+        ParsedLine::Command(p) => {
+            let id = p.command.id.clone();
+            commit_parse(&mut g, p).map_err(|e| e.to_string())?;
+            id
+        }
+        ParsedLine::Variable(v) => {
+            let name = v.name.clone();
+            g.upsert_variable(v);
+            // No command-id for pure variable declarations; return the variable name.
+            format!("var:{name}")
+        }
+    };
     if let Some(path) = state.project_path.lock().map_err(|e| e.to_string())?.as_ref() {
         let _ = ProjectFile::from_graph(&g).save(path);
     }
@@ -45,9 +60,19 @@ pub fn snapshot(state: tauri::State<SessionState>) -> Result<GraphSnapshot, Stri
             ordered.push(n.clone());
         }
     }
+    // Build consumer map: logical key of produced node → sorted var_refs.
+    let mut var_consumers: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for c in g.commands() {
+        if c.var_refs.is_empty() { continue; }
+        let key = c.produces.display();
+        var_consumers.entry(key).or_default().extend(c.var_refs.iter().cloned());
+    }
     Ok(GraphSnapshot {
         nodes: ordered,
         edges: g.edges().cloned().collect(),
+        variables: g.variables().cloned().collect(),
+        var_consumers,
     })
 }
 
@@ -83,9 +108,17 @@ pub fn open_project(path: String, state: tauri::State<SessionState>) -> Result<G
     let g = pf.to_graph(&state.argmap).map_err(|e| e.to_string())?;
     let nodes: Vec<Node> = g.nodes().cloned().collect();
     let edges: Vec<Edge> = g.edges().cloned().collect();
+    let variables: Vec<Variable> = g.variables().cloned().collect();
+    let mut var_consumers: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for c in g.commands() {
+        if c.var_refs.is_empty() { continue; }
+        let key = c.produces.display();
+        var_consumers.entry(key).or_default().extend(c.var_refs.iter().cloned());
+    }
     *state.graph.lock().map_err(|e| e.to_string())? = g;
     *state.project_path.lock().map_err(|e| e.to_string())? = Some(p);
-    Ok(GraphSnapshot { nodes, edges })
+    Ok(GraphSnapshot { nodes, edges, variables, var_consumers })
 }
 
 #[tauri::command]
@@ -168,11 +201,182 @@ pub fn remove_command(id: String, state: tauri::State<SessionState>) -> Result<(
     do_remove_command(&id, state.inner())
 }
 
+#[derive(Deserialize)]
+pub struct SetVariableArgs { pub name: String, pub body: String }
+
+/// Set or update a variable's body from a plain string (as typed by the user).
+/// If `body` begins with `az ` or `$(az ...)`, it's stored as a command argv;
+/// otherwise it's stored as a literal. `Declared` origin + `resolved: None`
+/// (forces a re-resolve on next execute).
+#[tauri::command]
+pub fn set_variable_body(
+    args: SetVariableArgs,
+    state: tauri::State<SessionState>,
+) -> Result<(), String> {
+    use crate::model::{VarBody, VarOrigin};
+    use crate::parser::varsyntax;
+    let mut g = state.graph.lock().map_err(|e| e.to_string())?;
+    let body = varsyntax::body_from_rhs(&args.body);
+    // For literal bodies the resolved value is trivially the body itself, so
+    // cache it immediately. Command bodies need an explicit Execute to run.
+    let resolved = match &body {
+        VarBody::Literal { value } => Some(value.clone()),
+        _ => None,
+    };
+    let updated = match g.variable(&args.name) {
+        Some(existing) => {
+            let mut v = existing.clone();
+            v.body = body;
+            v.origin = VarOrigin::Declared;
+            v.resolved = resolved;
+            v
+        }
+        None => Variable { name: args.name.clone(), body, origin: VarOrigin::Declared, resolved },
+    };
+    g.upsert_variable(updated);
+    if let Some(path) = state.project_path.lock().map_err(|e| e.to_string())?.as_ref() {
+        let _ = ProjectFile::from_graph(&g).save(path);
+    }
+    Ok(())
+}
+
+/// Re-run a variable's producer command (Command body only) and store the
+/// trimmed stdout in `resolved`. Emits `login-log`-style events so the user
+/// sees the command output in the Log pane. No-op for Literal/Unset bodies.
+#[tauri::command]
+pub async fn refresh_variable(
+    name: String,
+    app: AppHandle,
+    state: tauri::State<'_, SessionState>,
+) -> Result<Option<String>, String> {
+    use crate::model::VarBody;
+    let session = state.inner().clone();
+    let body = {
+        let g = session.graph.lock().map_err(|e| e.to_string())?;
+        g.variable(&name).ok_or_else(|| format!("variable not found: {name}"))?.body.clone()
+    };
+    match body {
+        VarBody::Unset => Err(format!("variable {name} has no body set")),
+        VarBody::Literal { value } => {
+            let mut g = session.graph.lock().map_err(|e| e.to_string())?;
+            if let Some(v) = g.variable_mut(&name) { v.resolved = Some(value.clone()); }
+            Ok(Some(value))
+        }
+        VarBody::Command { argv } => {
+            let resolved = resolve_var_command(&name, &argv, &app).await?;
+            let mut g = session.graph.lock().map_err(|e| e.to_string())?;
+            if let Some(v) = g.variable_mut(&name) { v.resolved = Some(resolved.clone()); }
+            if let Some(path) = session.project_path.lock().map_err(|e| e.to_string())?.as_ref() {
+                let _ = ProjectFile::from_graph(&g).save(path);
+            }
+            Ok(Some(resolved))
+        }
+    }
+}
+
+#[tauri::command]
+pub fn remove_variable(name: String, state: tauri::State<SessionState>) -> Result<(), String> {
+    let mut g = state.graph.lock().map_err(|e| e.to_string())?;
+    g.remove_variable(&name);
+    if let Some(path) = state.project_path.lock().map_err(|e| e.to_string())?.as_ref() {
+        let _ = ProjectFile::from_graph(&g).save(path);
+    }
+    Ok(())
+}
+
+/// Run a variable's producer argv, streaming output as `node-log`-style
+/// events tagged with the variable's name, and return the trimmed stdout.
+async fn resolve_var_command(
+    name: &str,
+    argv: &[String],
+    app: &AppHandle,
+) -> Result<String, String> {
+    use crate::runner::{default_az_exe, looks_like_not_logged_in, spawn_az, AzConfig, AzEvent};
+    use std::time::Duration;
+    use tokio::sync::{mpsc, oneshot};
+
+    let cfg = AzConfig { exe: default_az_exe().into(), timeout: Duration::from_secs(30) };
+    let (tx, mut rx) = mpsc::channel::<AzEvent>(64);
+    let (_cancel_tx, cancel_rx) = oneshot::channel();
+    let argv_vec = argv.to_vec();
+
+    let node_tag = format!("var:{name}");
+    let app_for_drain = app.clone();
+
+    let spawn_fut = async move { spawn_az(&cfg, &argv_vec, tx, cancel_rx).await; };
+    let drain_fut = async move {
+        let mut stdout_all = String::new();
+        let mut stderr_tail = String::new();
+        let mut exit: Option<i32> = None;
+        let mut timed_out = false;
+        while let Some(ev) = rx.recv().await {
+            match ev {
+                AzEvent::Stdout(line) => {
+                    if !stdout_all.is_empty() { stdout_all.push('\n'); }
+                    stdout_all.push_str(&line);
+                    // Per-line log, same shape as node-log.
+                    let _ = app_for_drain.emit_all("run-event", serde_json::to_value(
+                        &RunEventWire::NodeLog { node: node_tag.clone(), line, is_err: false }
+                    ).unwrap());
+                }
+                AzEvent::Stderr(line) => {
+                    if stderr_tail.len() < 2048 {
+                        stderr_tail.push_str(&line);
+                        stderr_tail.push('\n');
+                    }
+                    let _ = app_for_drain.emit_all("run-event", serde_json::to_value(
+                        &RunEventWire::NodeLog { node: node_tag.clone(), line, is_err: true }
+                    ).unwrap());
+                }
+                AzEvent::Exit { code, .. } => { exit = Some(code); break; }
+                AzEvent::Timeout => { timed_out = true; break; }
+                AzEvent::Canceled => break,
+            }
+        }
+        (stdout_all, stderr_tail, exit, timed_out)
+    };
+    let (_, (stdout_all, stderr_tail, exit, timed_out)) = tokio::join!(spawn_fut, drain_fut);
+
+    if timed_out { return Err(format!("resolving ${name} timed out")); }
+    if exit != Some(0) {
+        if looks_like_not_logged_in(&stderr_tail) {
+            let _ = app.emit_all("run-event", serde_json::to_value(&RunEventWire::AuthRequired {
+                triggered_by: "resolve".to_string(),
+                logical_key: format!("var:{name}"),
+            }).unwrap());
+            return Err("not_logged_in".into());
+        }
+        return Err(format!(
+            "resolving ${name} failed (exit {}): {}",
+            exit.unwrap_or(-1), stderr_tail.trim()
+        ));
+    }
+    Ok(stdout_all.trim().to_string())
+}
+
+/// Replace the graph with an empty one. Autosaves the empty state to the
+/// open project file, if any, matching the persistence behavior of
+/// add_command / remove_command.
+#[tauri::command]
+pub fn clear_all(state: tauri::State<SessionState>) -> Result<(), String> {
+    let mut g = state.graph.lock().map_err(|e| e.to_string())?;
+    *g = crate::model::Graph::new();
+    if let Some(path) = state.project_path.lock().map_err(|e| e.to_string())?.as_ref() {
+        let _ = ProjectFile::from_graph(&g).save(path);
+    }
+    Ok(())
+}
+
 /// Run `az <kind> show --name N --resource-group RG [--subscription S]` and update
 /// `node.status` to `Exists` or `Missing` based on exit code. 10 s timeout.
+///
+/// If `app` is `Some` and the check fails with an Azure-CLI "not logged in"
+/// signature, an `auth-required` run-event is emitted and the node's status is
+/// rolled back to `Unverified` instead of being marked `Missing`.
 pub async fn do_verify_node(
     logical_key: &str,
     session: &crate::ipc::state::Session,
+    app: Option<&AppHandle>,
 ) -> Result<crate::model::NodeStatus, String> {
     use crate::model::{NodeId, NodeKind, NodeStatus};
 
@@ -323,39 +527,52 @@ pub async fn do_verify_node(
         }
     };
 
-    run_and_classify(&node_id, argv, session).await
+    run_and_classify(&node_id, argv, session, app).await
 }
 
 async fn run_and_classify(
     node_id: &crate::model::NodeId,
     argv: Vec<String>,
     session: &crate::ipc::state::Session,
+    app: Option<&AppHandle>,
 ) -> Result<crate::model::NodeStatus, String> {
     use crate::model::NodeStatus;
-    use crate::runner::{spawn_az, AzConfig, AzEvent};
+    use crate::runner::{default_az_exe, looks_like_not_logged_in, spawn_az, AzConfig, AzEvent};
     use std::time::Duration;
     use tokio::sync::{mpsc, oneshot};
 
-    let cfg = AzConfig { exe: "az".into(), timeout: Duration::from_secs(10) };
-    let (tx, mut rx) = mpsc::channel::<AzEvent>(32);
+    let cfg = AzConfig { exe: default_az_exe().into(), timeout: Duration::from_secs(10) };
+    let (tx, mut rx) = mpsc::channel::<AzEvent>(64);
     let (_cancel_tx, cancel_rx) = oneshot::channel();
-    spawn_az(&cfg, &argv, tx, cancel_rx).await;
 
-    // Drain events; capture stderr's first line so we can distinguish a spawn
-    // failure (stderr starts with "spawn error:" and exit is -1 at duration 0)
-    // from a genuine non-zero az exit.
-    let mut exit_code: Option<i32> = None;
-    let mut exit_duration_ms: u64 = 0;
-    let mut stderr_first: Option<String> = None;
-    let mut timed_out = false;
-    while let Some(ev) = rx.recv().await {
-        match ev {
-            AzEvent::Stderr(line) if stderr_first.is_none() => { stderr_first = Some(line); }
-            AzEvent::Exit { code, duration_ms } => { exit_code = Some(code); exit_duration_ms = duration_ms; break; }
-            AzEvent::Timeout => { timed_out = true; break; }
-            _ => {}
+    // Spawn and drain must run concurrently: `az ... show` can emit JSON
+    // larger than the channel buffer, and awaiting spawn_az to completion
+    // before draining would deadlock on a full channel.
+    let spawn_fut = async move { spawn_az(&cfg, &argv, tx, cancel_rx).await; };
+    let drain_fut = async {
+        let mut exit_code: Option<i32> = None;
+        let mut exit_duration_ms: u64 = 0;
+        let mut stderr_first: Option<String> = None;
+        let mut stderr_tail = String::new();
+        let mut timed_out = false;
+        while let Some(ev) = rx.recv().await {
+            match ev {
+                AzEvent::Stderr(line) => {
+                    if stderr_first.is_none() { stderr_first = Some(line.clone()); }
+                    if stderr_tail.len() < 2048 {
+                        stderr_tail.push_str(&line);
+                        stderr_tail.push('\n');
+                    }
+                }
+                AzEvent::Exit { code, duration_ms } => { exit_code = Some(code); exit_duration_ms = duration_ms; break; }
+                AzEvent::Timeout => { timed_out = true; break; }
+                _ => {}
+            }
         }
-    }
+        (exit_code, exit_duration_ms, stderr_first, stderr_tail, timed_out)
+    };
+    let (_, (exit_code, exit_duration_ms, stderr_first, stderr_tail, timed_out)) =
+        tokio::join!(spawn_fut, drain_fut);
 
     // Helper: compare-and-swap the status back to a target ONLY if still Verifying.
     // Prevents clobbering a concurrent execute_node that may have advanced the
@@ -385,6 +602,20 @@ async fn run_and_classify(
         return Err(stderr_first.unwrap_or_else(|| "spawn error".into()));
     }
 
+    // Auth check must come before Missing classification — a non-zero exit
+    // caused by an empty token cache would otherwise be mislabeled as
+    // "resource does not exist".
+    if exit_code != Some(0) && looks_like_not_logged_in(&stderr_tail) {
+        cas_status(NodeStatus::Unverified)?;
+        if let Some(app) = app {
+            let _ = app.emit_all("run-event", serde_json::to_value(&RunEventWire::AuthRequired {
+                triggered_by: "verify".to_string(),
+                logical_key: node_id.display(),
+            }).unwrap());
+        }
+        return Err("not_logged_in".into());
+    }
+
     let new_status = if exit_code == Some(0) {
         NodeStatus::Exists
     } else {
@@ -397,9 +628,10 @@ async fn run_and_classify(
 #[tauri::command]
 pub async fn verify_node(
     logical_key: String,
+    app: AppHandle,
     state: tauri::State<'_, SessionState>,
 ) -> Result<crate::model::NodeStatus, String> {
-    do_verify_node(&logical_key, state.inner()).await
+    do_verify_node(&logical_key, state.inner(), Some(&app)).await
 }
 
 #[tauri::command]
@@ -422,13 +654,50 @@ pub async fn execute_node(
     let node_id = NodeId::from_key(&logical_key)
         .ok_or_else(|| format!("bad logical key: {logical_key}"))?;
 
-    // Find the command tokens belonging to this node.
-    let argv: Vec<String> = {
+    // Find the command tokens + its variable references.
+    let (tokens_raw, var_refs): (Vec<String>, Vec<String>) = {
         let g = session.graph.lock().map_err(|e| e.to_string())?;
         let node = g.node(&node_id).ok_or_else(|| format!("node not found: {logical_key}"))?;
         let cmd_id = node.command_id.clone().ok_or_else(|| "node has no command".to_string())?;
         let cmd = g.commands().find(|c| c.id == cmd_id).ok_or_else(|| "command missing".to_string())?;
-        cmd.tokens.clone()
+        (cmd.tokens.clone(), cmd.var_refs.clone())
+    };
+
+    // Resolve referenced variables before executing. Any still-Ghost with no
+    // body blocks execute — the user must fill in a value in the detail pane.
+    for var_name in &var_refs {
+        let (body, cached) = {
+            let g = session.graph.lock().map_err(|e| e.to_string())?;
+            let v = g.variable(var_name).ok_or_else(|| format!("unknown variable ${var_name}"))?;
+            (v.body.clone(), v.resolved.clone())
+        };
+        if cached.is_some() { continue; }
+        use crate::model::VarBody;
+        match body {
+            VarBody::Unset => {
+                return Err(format!("variable ${var_name} has no value set"));
+            }
+            VarBody::Literal { value } => {
+                let mut g = session.graph.lock().map_err(|e| e.to_string())?;
+                if let Some(v) = g.variable_mut(var_name) { v.resolved = Some(value); }
+            }
+            VarBody::Command { argv } => {
+                let resolved = resolve_var_command(var_name, &argv, &app).await?;
+                let mut g = session.graph.lock().map_err(|e| e.to_string())?;
+                if let Some(v) = g.variable_mut(var_name) { v.resolved = Some(resolved); }
+            }
+        }
+    }
+
+    // Substitute `$NAME` in every token, using the now-cached resolved values.
+    let argv: Vec<String> = {
+        let g = session.graph.lock().map_err(|e| e.to_string())?;
+        let resolve = |n: &str| -> Option<String> {
+            g.variable(n).and_then(|v| v.resolved.clone())
+        };
+        tokens_raw.iter()
+            .map(|t| crate::parser::varsyntax::substitute(t, &resolve))
+            .collect()
     };
 
     // Mark as Running.
@@ -501,6 +770,28 @@ pub async fn execute_node(
 
     let (_, (term, stderr_tail)) = tokio::join!(spawn_fut, drain_fut);
 
+    // Auth check: if the non-zero exit was caused by the user not being signed
+    // in, don't mark the node Failed. Roll it back to Declared and emit an
+    // auth-required event so the UI can prompt a login and offer a retry.
+    if let Term::Exit { code, .. } = &term {
+        if *code != 0 && crate::runner::looks_like_not_logged_in(&stderr_tail) {
+            {
+                let mut g = session.graph.lock().map_err(|e| e.to_string())?;
+                if let Some(n) = g.node_mut(&node_id) {
+                    n.status = crate::model::NodeStatus::Unverified;
+                }
+            }
+            let _ = app.emit_all("run-event", serde_json::to_value(&RunEventWire::AuthRequired {
+                triggered_by: "execute".to_string(),
+                logical_key: node_disp.clone(),
+            }).unwrap());
+            let _ = app.emit_all("run-event", serde_json::to_value(&RunEventWire::Aborted {
+                node: node_disp.clone(), reason: "not_logged_in".into(),
+            }).unwrap());
+            return Ok(());
+        }
+    }
+
     let elapsed_ms = started_at.elapsed().as_millis() as u64;
     let status = match term {
         Term::Exit { code: 0, duration_ms } => NodeStatus::Succeeded { duration_ms },
@@ -541,6 +832,74 @@ pub async fn execute_node(
     Ok(())
 }
 
+/// Spawn `az login`. Streams each output line as a `login-log` run-event so
+/// the existing LogPane can render it (the device-code URL lives in stderr).
+/// Returns `Ok(())` on exit 0. A session-level mutex prevents overlapping
+/// logins; a stored cancel sender lets the UI abort an in-flight sign-in.
+#[tauri::command]
+pub async fn az_login(app: AppHandle, state: tauri::State<'_, SessionState>) -> Result<(), String> {
+    use crate::runner::{default_az_exe, spawn_az, AzConfig, AzEvent};
+    use std::time::Duration;
+    use tokio::sync::{mpsc, oneshot};
+
+    let session = state.inner().clone();
+    let _guard = session.login_lock.try_lock()
+        .map_err(|_| "another login is already running".to_string())?;
+
+    let (cancel_tx, cancel_rx) = oneshot::channel();
+    *session.login_cancel.lock().map_err(|e| e.to_string())? = Some(cancel_tx);
+
+    // 10-minute ceiling for device-code login. Az login itself can take a
+    // while if the user walks away from the browser; this is an upper bound.
+    let cfg = AzConfig { exe: default_az_exe().into(), timeout: Duration::from_secs(600) };
+    let (tx, mut rx) = mpsc::channel::<AzEvent>(64);
+    let argv = vec!["login".to_string()];
+
+    let spawn_fut = async move { spawn_az(&cfg, &argv, tx, cancel_rx).await; };
+    let drain_app = app.clone();
+    let drain_fut = async move {
+        let mut ok = false;
+        let mut first_stderr: Option<String> = None;
+        while let Some(ev) = rx.recv().await {
+            match ev {
+                AzEvent::Stdout(line) => {
+                    let _ = drain_app.emit_all("run-event", serde_json::to_value(&RunEventWire::LoginLog {
+                        line, is_err: false,
+                    }).unwrap());
+                }
+                AzEvent::Stderr(line) => {
+                    if first_stderr.is_none() { first_stderr = Some(line.clone()); }
+                    let _ = drain_app.emit_all("run-event", serde_json::to_value(&RunEventWire::LoginLog {
+                        line, is_err: true,
+                    }).unwrap());
+                }
+                AzEvent::Exit { code, .. } => { ok = code == 0; break; }
+                AzEvent::Timeout | AzEvent::Canceled => { ok = false; break; }
+            }
+        }
+        (ok, first_stderr)
+    };
+
+    let (_, (ok, first_stderr)) = tokio::join!(spawn_fut, drain_fut);
+
+    // Drop the cancel slot now that the process has finished.
+    if let Ok(mut slot) = session.login_cancel.lock() { *slot = None; }
+
+    let _ = app.emit_all("run-event", serde_json::to_value(&RunEventWire::LoginFinished { ok }).unwrap());
+    if ok {
+        Ok(())
+    } else {
+        Err(first_stderr.unwrap_or_else(|| "az login failed".into()))
+    }
+}
+
+#[tauri::command]
+pub fn az_login_cancel(state: tauri::State<SessionState>) -> Result<(), String> {
+    let mut slot = state.login_cancel.lock().map_err(|e| e.to_string())?;
+    if let Some(tx) = slot.take() { let _ = tx.send(()); }
+    Ok(())
+}
+
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum RunEventWire {
@@ -549,6 +908,12 @@ enum RunEventWire {
     NodeFinished { node: String, status: String },
     Aborted { node: String, reason: String },
     Done { succeeded: usize, failed: usize },
+    AuthRequired {
+        triggered_by: String,
+        logical_key: String,
+    },
+    LoginLog { line: String, is_err: bool },
+    LoginFinished { ok: bool },
 }
 
 impl RunEventWire {

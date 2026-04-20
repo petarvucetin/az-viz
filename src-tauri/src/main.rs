@@ -28,8 +28,14 @@ fn main() {
             ipc_cmd::save_project_as,
             ipc_cmd::run_live,
             ipc_cmd::remove_command,
+            ipc_cmd::clear_all,
+            ipc_cmd::set_variable_body,
+            ipc_cmd::refresh_variable,
+            ipc_cmd::remove_variable,
             ipc_cmd::verify_node,
             ipc_cmd::execute_node,
+            ipc_cmd::az_login,
+            ipc_cmd::az_login_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

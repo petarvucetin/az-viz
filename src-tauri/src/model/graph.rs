@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use serde::{Deserialize, Serialize};
-use super::{Command, Edge, Node, NodeId, NodeKind, Origin, Scope};
+use super::{Command, Edge, Node, NodeId, NodeKind, Origin, Scope, Variable};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Graph {
@@ -8,6 +8,8 @@ pub struct Graph {
     edges: BTreeSet<Edge>,
     commands: BTreeMap<String, Command>,
     insertion_order: Vec<String>,
+    #[serde(default)]
+    variables: BTreeMap<String, Variable>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq)]
@@ -90,6 +92,12 @@ impl Graph {
         self.insertion_order.retain(|x| x != id);
         Some(cmd)
     }
+
+    pub fn variables(&self) -> impl Iterator<Item = &Variable> { self.variables.values() }
+    pub fn variable(&self, name: &str) -> Option<&Variable> { self.variables.get(name) }
+    pub fn variable_mut(&mut self, name: &str) -> Option<&mut Variable> { self.variables.get_mut(name) }
+    pub fn upsert_variable(&mut self, v: Variable) { self.variables.insert(v.name.clone(), v); }
+    pub fn remove_variable(&mut self, name: &str) -> Option<Variable> { self.variables.remove(name) }
 
     pub fn parents<'a>(&'a self, id: &'a NodeId) -> impl Iterator<Item = &'a NodeId> + 'a {
         self.edges.iter().filter(move |e| e.to == *id).map(|e| &e.from)
@@ -194,7 +202,7 @@ mod tests {
         let c1 = Command {
             id: "cmd-1".into(), raw: "x".into(), tokens: vec![], parsed_at: chrono::Utc::now(),
             produces: NodeId::of(NodeKind::Vnet, "v", &Scope::new("rg")),
-            refs: vec![], warnings: vec![],
+            refs: vec![], warnings: vec![], var_refs: vec![],
         };
         let c2 = Command { id: "cmd-2".into(), ..c1.clone() };
         g.add_command(c1);

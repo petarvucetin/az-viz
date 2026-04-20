@@ -80,9 +80,9 @@
 
   .azn.origin-ghost { border-color: #888; border-style: dashed; }
   .azn.status-running    { border-color: #b58022; border-style: dashed; }
-  .azn.status-succeeded  { border-color: #2a8f3d; border-style: solid; }
+  .azn.status-succeeded  { border-color: #2a8f3d; border-style: solid; border-width: 2.5px; }
   .azn.status-failed     { border-color: #b53030; border-style: solid; }
-  .azn.status-exists     { border-color: #2a8f3d; border-style: solid; }
+  .azn.status-exists     { border-color: #2a8f3d; border-style: solid; border-width: 2.5px; }
   .azn.status-missing    { border-color: #ff8c1a; border-style: dashed; }
   .azn.status-verifying  { border-color: #b58022; border-style: dashed; }
   .azn.selected          { border-color: #0b2447; border-width: 3px; }

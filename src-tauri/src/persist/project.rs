@@ -1,7 +1,7 @@
 use std::path::Path;
 use serde::{Deserialize, Serialize};
-use crate::model::{Command, Graph};
-use crate::parser::{commit, parse, ArgMap};
+use crate::model::{Command, Graph, Variable};
+use crate::parser::{commit, parse_line, ArgMap, ParsedLine};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UiState {
@@ -14,6 +14,8 @@ pub struct ProjectFile {
     pub version: u32,
     pub commands: Vec<Command>,
     #[serde(default)]
+    pub variables: Vec<Variable>,
+    #[serde(default)]
     pub ui_state: UiState,
 }
 
@@ -24,6 +26,7 @@ impl ProjectFile {
         Self {
             version: Self::CURRENT_VERSION,
             commands: graph.commands().cloned().collect(),
+            variables: graph.variables().cloned().collect(),
             ui_state: UiState::default(),
         }
     }
@@ -40,9 +43,14 @@ impl ProjectFile {
 
     pub fn to_graph(&self, argmap: &ArgMap) -> Result<Graph, crate::parser::ParseError> {
         let mut g = Graph::new();
+        // Preload variables so consumer commands can resolve `$NAME` refs
+        // without creating ghost duplicates during rebuild.
+        for v in &self.variables { g.upsert_variable(v.clone()); }
         for c in &self.commands {
-            let p = parse(&c.raw, argmap, &g)?;
-            commit(&mut g, p)?;
+            match parse_line(&c.raw, argmap, &g)? {
+                ParsedLine::Command(p) => { commit(&mut g, p)?; }
+                ParsedLine::Variable(v) => { g.upsert_variable(v); }
+            }
         }
         Ok(g)
     }
@@ -51,6 +59,7 @@ impl ProjectFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parser::parse;
 
     fn load_argmap() -> ArgMap {
         ArgMap::from_json(&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/arg-map.json")).unwrap()).unwrap()

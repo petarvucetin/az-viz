@@ -1,7 +1,7 @@
 use chrono::Utc;
-use crate::model::{Command, Edge, EdgeKind, Graph, Node, NodeId, NodeKind, Scope, Warning, WarningKind};
+use crate::model::{Command, Edge, EdgeKind, Graph, Node, NodeId, NodeKind, Scope, Variable, Warning, WarningKind};
 use super::argmap::{ArgMap, ArgMapEntry};
-use super::tokenize;
+use super::{tokenize, varsyntax};
 
 #[derive(Debug, thiserror::Error, PartialEq)]
 pub enum ParseError {
@@ -22,6 +22,26 @@ pub struct Parsed {
     pub command: Command,
     pub new_nodes: Vec<Node>,
     pub new_edges: Vec<Edge>,
+    /// Ghost variables created because the command referenced `$NAME`
+    /// for a variable not yet in the graph. Existing variables are left
+    /// alone.
+    pub new_variables: Vec<Variable>,
+}
+
+/// Top-level parse result: either a command, or a variable assignment.
+/// Use `parse_line` as the entry point from the IPC layer; `parse` remains
+/// the command-only path for existing tests.
+#[derive(Debug)]
+pub enum ParsedLine {
+    Command(Parsed),
+    Variable(Variable),
+}
+
+pub fn parse_line(line: &str, argmap: &ArgMap, graph: &Graph) -> Result<ParsedLine, ParseError> {
+    if let Some((name, rhs)) = varsyntax::split_assignment(line) {
+        return Ok(ParsedLine::Variable(varsyntax::variable_from_assignment(name, &rhs)));
+    }
+    parse(line, argmap, graph).map(ParsedLine::Command)
 }
 
 fn kind_from_str(s: &str) -> Option<NodeKind> {
@@ -200,17 +220,33 @@ pub fn parse(line: &str, argmap: &ArgMap, graph: &Graph) -> Result<Parsed, Parse
 
     new_nodes.push(produces_node);
 
+    // Scan every token for `$NAME` references. Collect unique names and
+    // create Ghost variables for names not already in the graph.
+    let full_tokens: Vec<String> = std::iter::once("az".to_string()).chain(tokens).collect();
+    let mut seen_vars: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for t in &full_tokens {
+        for name in varsyntax::scan_var_refs(t) { seen_vars.insert(name); }
+    }
+    let mut new_variables: Vec<Variable> = Vec::new();
+    for name in &seen_vars {
+        if graph.variable(name).is_none() && !new_variables.iter().any(|v| &v.name == name) {
+            new_variables.push(Variable::ghost(name.clone()));
+        }
+    }
+    let var_refs: Vec<String> = seen_vars.into_iter().collect();
+
     let command = Command {
         id: command_id,
         raw: line.to_string(),
-        tokens: std::iter::once("az".to_string()).chain(tokens).collect(),
+        tokens: full_tokens,
         parsed_at: Utc::now(),
         produces: produces_id,
         refs: ref_ids,
         warnings,
+        var_refs,
     };
 
-    Ok(Parsed { command, new_nodes, new_edges })
+    Ok(Parsed { command, new_nodes, new_edges, new_variables })
 }
 
 #[cfg(test)]
@@ -346,6 +382,19 @@ mod tests {
         ).unwrap();
         let nsg = &p.new_nodes[0];
         assert!(nsg.props.get("cidr").is_none());
+    }
+
+    #[test]
+    fn quoted_dollar_var_ref_is_detected() {
+        let g = Graph::new();
+        let m = load_argmap();
+        let p = parse(
+            r#"az network vpn-connection create -g rg -n cn-onprem --vnet-gateway1 vpngw-hub --local-gateway2 lng-onprem --shared-key "$PSK""#,
+            &m, &g,
+        ).unwrap();
+        assert_eq!(p.command.var_refs, vec!["PSK".to_string()]);
+        assert_eq!(p.new_variables.len(), 1);
+        assert_eq!(p.new_variables[0].name, "PSK");
     }
 
     #[test]

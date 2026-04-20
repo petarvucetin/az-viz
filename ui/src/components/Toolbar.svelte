@@ -2,38 +2,52 @@
   import { onMount } from "svelte";
   import { getVersion } from "@tauri-apps/api/app";
   import { ipc } from "../lib/ipc";
+  import { keyOf } from "../lib/blocking";
   import { appState } from "../lib/store.svelte";
 
-  let running = $state(false);
   let version = $state("");
+  let verifying = $state(false);
 
   onMount(async () => {
     try { version = await getVersion(); } catch { /* not running under tauri */ }
   });
 
-  async function dry() {
-    const plan = await ipc.dryRun();
-    console.log("dry-run plan", plan);
-  }
-  async function run() {
-    running = true;
-    try { await ipc.runLive(); } finally { running = false; }
-    const snap = await ipc.snapshot();
-    appState.nodes = snap.nodes; appState.edges = snap.edges;
-  }
   function fit() { appState.fitSignal++; }
   function relayout() { appState.layoutSignal++; }
+
+  async function verifyAll() {
+    if (verifying) return;
+    const nodes = appState.nodes.filter(n => n.origin === "Declared");
+    if (nodes.length === 0) return;
+    verifying = true;
+    appState.appendLog(`[verify-all] checking ${nodes.length} node(s)`);
+    try {
+      await Promise.all(nodes.map(async (n) => {
+        const label = `${n.kind}/${n.name}`;
+        try {
+          const status = await ipc.verifyNode(keyOf(n.id));
+          appState.appendLog(`[verify] ${label}: ${status.kind}`);
+        } catch { /* auth-required via banner, other errors via lastError */ }
+      }));
+      const snap = await ipc.snapshot();
+      appState.applySnapshot(snap);
+      appState.appendLog(`[verify-all] done`);
+    } finally { verifying = false; }
+  }
 </script>
 
 <div class="toolbar">
   <span class="title">az-plotter</span>
   <span class="sep">·</span>
-  <button onclick={dry} disabled={running}>Dry-run</button>
-  <button onclick={run} disabled={running} class="primary">Run</button>
   <button onclick={fit}>Fit</button>
   <button onclick={relayout}>Re-layout</button>
-  <button disabled>Emit script</button>
-  <button disabled={!running}>Stop</button>
+  <button onclick={verifyAll} disabled={verifying || appState.nodes.filter(n => n.origin === "Declared").length === 0}>
+    {verifying ? "Verifying…" : "Verify"}
+  </button>
+  <label class="auto">
+    <input type="checkbox" bind:checked={appState.autoCreate} />
+    Auto Create
+  </label>
   <span class="spacer"></span>
   {#if version}<span class="version">v{version}</span>{/if}
 </div>
@@ -46,6 +60,8 @@
   button { background:#555; color:#eee; border:0; padding:4px 10px; border-radius:3px; cursor:pointer; }
   button.primary { background:#2a8f3d; }
   button:disabled { opacity:.5; cursor:default; }
+  .auto { display:flex; align-items:center; gap:5px; font-size:12px; cursor:pointer; user-select:none; }
+  .auto input { margin:0; cursor:pointer; }
   .spacer { flex:1; }
   .version { opacity:.55; font-size:11px; font-variant-numeric:tabular-nums; }
 </style>

@@ -22,6 +22,10 @@ pub struct Command {
     pub refs: Vec<NodeId>,
     #[serde(default)]
     pub warnings: Vec<Warning>,
+    /// Names of shell variables referenced in this command's tokens
+    /// (e.g. a token containing `$SUBNET_ID`). Populated at parse time.
+    #[serde(default)]
+    pub var_refs: Vec<String>,
 }
 
 #[cfg(test)]
@@ -40,6 +44,7 @@ mod tests {
             produces: NodeId::of(NodeKind::Vnet, "v", &rg),
             refs: vec![],
             warnings: vec![],
+            var_refs: vec![],
         };
         let json = serde_json::to_string(&cmd).unwrap();
         let back: Command = serde_json::from_str(&json).unwrap();

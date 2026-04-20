@@ -22,11 +22,32 @@ export interface Node {
 }
 export interface Edge { from: NodeId; to: NodeId; via: string; kind: "Ref" | "Scope" }
 
+export type VarBody =
+  | { mode: "command"; argv: string[] }
+  | { mode: "literal"; value: string }
+  | { mode: "unset" };
+
+export interface Variable {
+  name: string;
+  body: VarBody;
+  origin: "Declared" | "Ghost";
+  resolved: string | null;
+}
+
 export type RunEvent =
   | { type: "node-started"; node: string; argv: string[] }
   | { type: "node-log"; node: string; line: string; is_err: boolean }
   | { type: "node-finished"; node: string; status: string }
   | { type: "aborted"; node: string; reason: string }
-  | { type: "done"; succeeded: number; failed: number };
+  | { type: "done"; succeeded: number; failed: number }
+  | { type: "auth-required"; triggered_by: "verify" | "execute"; logical_key: string }
+  | { type: "login-log"; line: string; is_err: boolean }
+  | { type: "login-finished"; ok: boolean };
 
-export interface GraphSnapshot { nodes: Node[]; edges: Edge[] }
+export interface GraphSnapshot {
+  nodes: Node[];
+  edges: Edge[];
+  variables: Variable[];
+  /** logical key of a produced node → variable names the producing command references */
+  var_consumers: Record<string, string[]>;
+}
