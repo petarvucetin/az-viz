@@ -4,15 +4,57 @@
   let line = "";
   let localErr = "";
 
+  /** Split textarea content into logical commands.
+   *  - Joins bash-style `\` line continuations
+   *  - Skips empty lines and `#` comment lines
+   *  - Returns each command as a single-line string, preserving order
+   */
+  function splitLines(input: string): string[] {
+    const rawLines = input.split(/\r?\n/);
+    const merged: string[] = [];
+    let accum = "";
+    for (const raw of rawLines) {
+      const t = raw.trimEnd();
+      if (t.endsWith("\\")) {
+        accum += t.slice(0, -1).trim() + " ";
+        continue;
+      }
+      accum += t.trim();
+      if (accum) merged.push(accum);
+      accum = "";
+    }
+    if (accum.trim()) merged.push(accum.trim());
+    return merged.filter(l => l && !l.startsWith("#"));
+  }
+
   async function add() {
     localErr = "";
-    try {
-      await ipc.addCommand(line.trim());
-      line = "";
-      const snap = await ipc.snapshot();
-      nodes.set(snap.nodes); edges.set(snap.edges);
-      lastError.set(null);
-    } catch (e) { localErr = String(e); }
+    const cmds = splitLines(line);
+    if (cmds.length === 0) return;
+
+    let processed = 0;
+    for (const cmd of cmds) {
+      try {
+        await ipc.addCommand(cmd);
+        processed++;
+      } catch (e) {
+        // Leave unprocessed lines in the textarea so the user can fix and retry.
+        const remaining = cmds.slice(processed);
+        line = remaining.join("\n");
+        const preview = cmd.length > 80 ? cmd.slice(0, 77) + "..." : cmd;
+        localErr = `Line ${processed + 1} (${preview}): ${e}`;
+        // Still refresh to show whatever did commit.
+        const snap = await ipc.snapshot();
+        nodes.set(snap.nodes); edges.set(snap.edges);
+        return;
+      }
+    }
+
+    // All commands processed successfully.
+    line = "";
+    const snap = await ipc.snapshot();
+    nodes.set(snap.nodes); edges.set(snap.edges);
+    lastError.set(null);
   }
 
   // Display whichever error is most recent — localErr from add-command,
@@ -21,8 +63,8 @@
 </script>
 
 <div class="pane">
-  <label class="lbl">New command</label>
-  <textarea bind:value={line} rows="3" placeholder="az network vnet create --name v --resource-group rg"></textarea>
+  <label class="lbl">New command(s)</label>
+  <textarea bind:value={line} rows="6" placeholder="az network vnet create --name v --resource-group rg&#10;az network vnet subnet create --name s --resource-group rg --vnet-name v --address-prefixes 10.0.0.0/27"></textarea>
   <button on:click={add} disabled={!line.trim()}>Add</button>
   {#if err}<div class="err">{err}</div>{/if}
 
