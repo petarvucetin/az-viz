@@ -44,6 +44,7 @@ fn kind_to_az_subcommand(kind: NodeKind) -> &'static str {
         NodeKind::VnetGateway => "vnet-gateway",
         NodeKind::LocalGateway => "local-gateway",
         NodeKind::VpnConnection => "vpn-connection",
+        NodeKind::VnetPeering => "vnet peering",
         NodeKind::DnsResolver => "dns-resolver",
         NodeKind::ResourceGroup => "group",
     }

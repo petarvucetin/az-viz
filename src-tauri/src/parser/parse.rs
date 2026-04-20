@@ -37,6 +37,7 @@ fn kind_from_str(s: &str) -> Option<NodeKind> {
         "vnet-gateway" => NodeKind::VnetGateway,
         "local-gateway" => NodeKind::LocalGateway,
         "vpn-connection" => NodeKind::VpnConnection,
+        "vnet-peering" => NodeKind::VnetPeering,
         "dns-resolver" => NodeKind::DnsResolver,
         "rg" => NodeKind::ResourceGroup,
         _ => return None,
@@ -74,6 +75,14 @@ fn flag_eq_prefix<'a>(token: &'a str, flag: &str) -> Option<&'a str> {
         if let Some(v) = token.strip_prefix(&format!("{a}=")) { return Some(v); }
     }
     None
+}
+
+fn flag_is_present(rest: &[String], flag: &str) -> bool {
+    for t in rest {
+        if flag_matches(t, flag) { return true; }
+        if flag_eq_prefix(t, flag).is_some() { return true; }
+    }
+    false
 }
 
 fn extract_flag<'a>(rest: &'a [String], flag: &str) -> Option<&'a str> {
@@ -142,7 +151,13 @@ pub fn parse(line: &str, argmap: &ArgMap, graph: &Graph) -> Result<Parsed, Parse
     for (prop_name, flag) in &entry.props {
         let vals = extract_flag_multi(rest, flag);
         match vals.len() {
-            0 => {} // flag not present — leave prop unset
+            0 => {
+                // Flag might be a boolean present-without-value. If it's on the command line
+                // at all, record `true`. Otherwise leave unset.
+                if flag_is_present(rest, flag) {
+                    produces_node.props.insert(prop_name.clone(), serde_json::Value::Bool(true));
+                }
+            }
             1 => {
                 produces_node.props.insert(prop_name.clone(), serde_json::Value::String(vals[0].to_string()));
             }
@@ -329,5 +344,19 @@ mod tests {
         ).unwrap();
         let nsg = &p.new_nodes[0];
         assert!(nsg.props.get("cidr").is_none());
+    }
+
+    #[test]
+    fn vnet_peering_captures_boolean_flags_as_true() {
+        let g = Graph::new();
+        let m = load_argmap();
+        let p = parse(
+            "az network vnet peering create -g rg --vnet-name v --name p --remote-vnet r --allow-vnet-access --allow-forwarded-traffic",
+            &m, &g,
+        ).unwrap();
+        let peering = p.new_nodes.iter().find(|n| n.kind == NodeKind::VnetPeering).unwrap();
+        assert_eq!(peering.props.get("allow-vnet-access"), Some(&serde_json::json!(true)));
+        assert_eq!(peering.props.get("allow-forwarded-traffic"), Some(&serde_json::json!(true)));
+        assert!(peering.props.get("allow-gateway-transit").is_none(), "absent flag should not be set");
     }
 }

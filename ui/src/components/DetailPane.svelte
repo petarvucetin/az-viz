@@ -29,6 +29,7 @@
     for (const [k, v] of Object.entries(p)) {
       if (k === "cidr") continue;
       if (typeof v === "string") out.push([k, v]);
+      else if (typeof v === "boolean") out.push([k, v ? "yes" : "no"]);
       else if (Array.isArray(v)) out.push([k, v.filter(x => typeof x === "string").join(", ")]);
     }
     return out;

@@ -14,12 +14,17 @@
     "props":    { "cidr": "--address-prefixes" }
   },
   "network vnet peering create": {
-    "produces": { "kind": "vnet", "name_from": "--vnet-name" },
+    "produces": { "kind": "vnet-peering", "name_from": "--name" },
     "scope":    { "rg": "--resource-group" },
-    "refs":     [],
+    "refs": [
+      { "kind": "vnet", "via": "--vnet-name",    "required": true },
+      { "kind": "vnet", "via": "--remote-vnet",  "required": true }
+    ],
     "props": {
-      "peering":     "--name",
-      "remote-vnet": "--remote-vnet"
+      "allow-vnet-access":      "--allow-vnet-access",
+      "allow-forwarded-traffic":"--allow-forwarded-traffic",
+      "allow-gateway-transit":  "--allow-gateway-transit",
+      "use-remote-gateways":    "--use-remote-gateways"
     }
   },
   "network nsg create": {

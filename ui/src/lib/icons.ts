@@ -33,6 +33,8 @@ export const KIND_ICONS: Record<NodeKind, string> = {
   "local-gateway": svgDataUrl(`<path d="M2 8 L8 3 L14 8 V13 Q14 14 13 14 H3 Q2 14 2 13 Z"/><rect x="7" y="10" width="2" height="4"/>`),
   // Two boxes joined by a lightning-ish squiggle (VPN connection)
   "vpn-connection": svgDataUrl(`<rect x="1" y="6" width="4" height="4" rx="0.5"/><rect x="11" y="6" width="4" height="4" rx="0.5"/><path d="M5 8 L8 6 L8 10 L11 8"/>`),
+  // Two linked rings (vnet peering)
+  "vnet-peering": svgDataUrl(`<circle cx="5" cy="8" r="3.5"/><circle cx="11" cy="8" r="3.5"/>`),
   // Globe for DNS resolver
   "dns-resolver": svgDataUrl(`<circle cx="8" cy="8" r="6"/><path d="M2 8 H14 M8 2 Q11 5 11 8 Q11 11 8 14 M8 2 Q5 5 5 8 Q5 11 8 14"/>`),
   // Folder (Resource group)

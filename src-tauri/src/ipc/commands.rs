@@ -193,6 +193,15 @@ pub async fn do_verify_node(
                     None => return Err(format!("nsg rule {} has no parent NSG in the graph", logical_key)),
                 }
             }
+            NodeKind::VnetPeering => {
+                let parent = g.parents(&node_id).find_map(|p| {
+                    if matches!(p.kind, NodeKind::Vnet) { Some(p.name.clone()) } else { None }
+                });
+                match parent {
+                    Some(n) => Some(n),
+                    None => return Err(format!("vnet peering {} has no parent VNet in the graph", logical_key)),
+                }
+            }
             _ => None,
         }
     };
@@ -231,6 +240,17 @@ pub async fn do_verify_node(
             a.extend([
                 "--name".into(), node_id.name.clone(),
                 "--resource-group".into(), node_id.resource_group.clone(),
+            ]);
+            if let Some(ref sub) = node_id.subscription { a.extend(["--subscription".into(), sub.clone()]); }
+            a
+        }
+        NodeKind::VnetPeering => {
+            let vnet = parent_name.as_ref().expect("vnet-peering parent checked above");
+            let mut a: Vec<String> = ["network", "vnet", "peering", "show"].iter().map(|s| s.to_string()).collect();
+            a.extend([
+                "--name".into(), node_id.name.clone(),
+                "--resource-group".into(), node_id.resource_group.clone(),
+                "--vnet-name".into(), vnet.clone(),
             ]);
             if let Some(ref sub) = node_id.subscription { a.extend(["--subscription".into(), sub.clone()]); }
             a
