@@ -232,8 +232,33 @@
     sfEdges.set(rawEdges);
   }
 
-  // Rebuild + layout whenever nodes, edges, or selection changes.
-  $: buildAndLayout($storeNodes, $storeEdges, $selectedNodeKey);
+  // Rebuild + layout whenever the graph data changes (nodes/edges). Selection
+  // changes are applied separately below without a full ELK re-layout.
+  $: buildAndLayout($storeNodes, $storeEdges, null);
+
+  // Apply selection-only updates: restyle edges and mark the selected node's
+  // `selectedDirect`. Does NOT rebuild the graph or run ELK.
+  $: {
+    const selKey = $selectedNodeKey;
+    sfNodes.update(list => list.map(n => {
+      if (n.type !== "resource") return n;
+      const logical = (n.data as any)?.logicalKey;
+      const sel = selKey !== null && logical === selKey;
+      return { ...n, data: { ...(n.data as any), selectedDirect: sel } };
+    }));
+    sfEdges.update(list => list.map(e => {
+      const srcLogical = logicalOf(e.source);
+      const tgtLogical = logicalOf(e.target);
+      const on = selKey !== null && (srcLogical === selKey || tgtLogical === selKey);
+      const color = on ? "#0b2447" : "#4a90e2";
+      return {
+        ...e,
+        style: on ? "stroke:#0b2447;stroke-width:3;" : "stroke:#4a90e2;stroke-width:1.5;",
+        zIndex: on ? 10 : 0,
+        markerEnd: { type: MarkerType.ArrowClosed, color },
+      };
+    }));
+  }
 
   // ─── Node click ─────────────────────────────────────────────────────────────
 
