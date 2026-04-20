@@ -21,14 +21,4 @@ export function applyRunEvent(ev: RunEvent) {
   }
 }
 
-export interface ContextMenuState {
-  logicalKey: string;
-  commandId: string | null;
-  origin: "Declared" | "Ghost";
-  status: string;
-  x: number;
-  y: number;
-}
-
-export const contextMenu = writable<ContextMenuState | null>(null);
 export const lastError = writable<string | null>(null);

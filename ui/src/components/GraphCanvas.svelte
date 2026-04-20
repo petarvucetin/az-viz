@@ -3,7 +3,7 @@
   import cytoscape from "cytoscape";
   import dagre from "cytoscape-dagre";
   import nodeHtmlLabel from "cytoscape-node-html-label";
-  import { nodes, edges, selectedNodeKey, contextMenu } from "../lib/store";
+  import { nodes, edges, selectedNodeKey } from "../lib/store";
   import type { Node as GNode, Edge as GEdge, NodeKind } from "../lib/types";
   import { cidrToRange, cidrContains } from "../lib/cidr";
   import { KIND_ICONS } from "../lib/icons";
@@ -170,10 +170,6 @@
   }
 
   onMount(() => {
-    // Suppress the webview's native context menu on the canvas so Cytoscape's
-    // cxttap event drives our custom menu without the native one overlaying.
-    container.addEventListener("contextmenu", (e) => e.preventDefault());
-
     cy = cytoscape({
       container,
       wheelSensitivity: 0.2,
@@ -252,19 +248,6 @@
       selectedNodeKey.set(logical);
     });
 
-    cy.on("cxttap", "node[kind]", (ev) => {
-      const data = ev.target.data();
-      // Prevent the webview's own context menu from stealing the event.
-      if (ev.originalEvent) ev.originalEvent.preventDefault();
-      contextMenu.set({
-        logicalKey: data.logicalKey,
-        commandId: data.commandId ?? null,
-        origin: data.origin,
-        status: data.status,
-        x: (ev.originalEvent as MouseEvent)?.clientX ?? 100,
-        y: (ev.originalEvent as MouseEvent)?.clientY ?? 100,
-      });
-    });
   });
 
   $: if (cy) {
