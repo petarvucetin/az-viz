@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import cytoscape from "cytoscape";
-  import dagre from "cytoscape-dagre";
+  import elk from "cytoscape-elk";
   import nodeHtmlLabel from "cytoscape-node-html-label";
   import { nodes, edges, selectedNodeKey, fitSignal } from "../lib/store";
   import type { Node as GNode, Edge as GEdge, NodeKind } from "../lib/types";
   import { cidrToRange, cidrContains } from "../lib/cidr";
 
-  cytoscape.use(dagre);
+  cytoscape.use(elk);
   nodeHtmlLabel(cytoscape as any);
 
   let container: HTMLDivElement;
@@ -284,8 +284,7 @@
             "line-color": "#4a90e2",
             "target-arrow-color": "#4a90e2",
             "target-arrow-shape": "triangle",
-            "curve-style": "taxi",
-            "taxi-direction": "vertical",
+            "curve-style": "straight",
           } as any,
         },
       ],
@@ -305,7 +304,21 @@
     ]);
 
     cy.add(buildElements($nodes, $edges) as any);
-    cy.layout({ name: "dagre", rankDir: "TB", nodeSep: 24, rankSep: 44, ranker: "tight-tree" } as any).run();
+    cy.layout({
+      name: "elk",
+      elk: {
+        "algorithm": "layered",
+        "elk.direction": "DOWN",
+        "elk.layered.spacing.nodeNodeBetweenLayers": 40,
+        "elk.spacing.nodeNode": 20,
+        "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+        "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+        "elk.edgeRouting": "ORTHOGONAL",
+        "elk.layered.mergeEdges": "true",
+        "elk.layered.unnecessaryBendpoints": "true",
+      },
+      nodeDimensionsIncludeLabels: false,
+    } as any).run();
 
     cy.on("tap", "node[kind]", (ev) => {
       const logical = ev.target.data("logicalKey") as string;
@@ -317,7 +330,21 @@
   $: if (cy) {
     cy.elements().remove();
     cy.add(buildElements($nodes, $edges) as any);
-    cy.layout({ name: "dagre", rankDir: "TB", nodeSep: 24, rankSep: 44, ranker: "tight-tree" } as any).run();
+    cy.layout({
+      name: "elk",
+      elk: {
+        "algorithm": "layered",
+        "elk.direction": "DOWN",
+        "elk.layered.spacing.nodeNodeBetweenLayers": 40,
+        "elk.spacing.nodeNode": 20,
+        "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+        "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+        "elk.edgeRouting": "ORTHOGONAL",
+        "elk.layered.mergeEdges": "true",
+        "elk.layered.unnecessaryBendpoints": "true",
+      },
+      nodeDimensionsIncludeLabels: false,
+    } as any).run();
   }
 
   // Apply .selected class to all visual nodes sharing the selected logical key.
