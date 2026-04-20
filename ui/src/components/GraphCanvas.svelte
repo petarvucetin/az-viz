@@ -173,10 +173,8 @@
       .join("");
     return `
       <div class="azn">
-        <div class="azn-head">
-          <span class="azn-pill">${escapeHtml(data.kind)}</span>
-          <span class="azn-name">${escapeHtml(data.name)}</span>
-        </div>
+        <span class="azn-pill">${escapeHtml(data.kind)}</span>
+        <div class="azn-name">${escapeHtml(data.name)}</div>
         ${cidr ? `<div class="azn-cidr">${escapeHtml(cidr)}${countSuffix}</div>` : ""}
         ${range ? `<div class="azn-range">${escapeHtml(range)}</div>` : ""}
         ${extras}
@@ -308,14 +306,17 @@
 
   :global(.azn) {
     font-family: system-ui, sans-serif;
-    padding: 6px 10px;
+    padding: 14px 10px 6px 10px;
     min-width: 150px;
     max-width: 210px;
     text-align: center;
     line-height: 1.3;
+    position: relative;
   }
-  :global(.azn-head) { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; }
   :global(.azn-pill) {
+    position: absolute;
+    top: 2px;
+    left: 6px;
     font-size: 9px; font-weight: 600;
     padding: 1px 7px;
     border-radius: 10px;

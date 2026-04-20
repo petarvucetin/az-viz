@@ -36,6 +36,7 @@ fn kind_from_str(s: &str) -> Option<NodeKind> {
         "route-table" => NodeKind::RouteTable,
         "vnet-gateway" => NodeKind::VnetGateway,
         "local-gateway" => NodeKind::LocalGateway,
+        "vpn-connection" => NodeKind::VpnConnection,
         "rg" => NodeKind::ResourceGroup,
         _ => return None,
     })

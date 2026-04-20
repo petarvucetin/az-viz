@@ -66,5 +66,17 @@
       "cidr":       "--local-address-prefixes",
       "gateway-ip": "--gateway-ip-address"
     }
+  },
+  "network vpn-connection create": {
+    "produces": { "kind": "vpn-connection", "name_from": "--name" },
+    "scope":    { "rg": "--resource-group", "location": "--location" },
+    "refs": [
+      { "kind": "vnet-gateway",  "via": "--vnet-gateway1",  "required": true },
+      { "kind": "local-gateway", "via": "--local-gateway2", "required": false },
+      { "kind": "vnet-gateway",  "via": "--vnet-gateway2",  "required": false }
+    ],
+    "props": {
+      "connection-type": "--connection-type"
+    }
   }
 }
