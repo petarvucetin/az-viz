@@ -18,6 +18,12 @@
     return `${id.kind}/${id.name}@rg:${id.resource_group}${sub}`;
   }
 
+  /** Context bucket for a NodeKind — drives background gradient. */
+  function contextOf(kind: string): string {
+    if (kind.startsWith("dns-")) return "dns";
+    return "network";
+  }
+
   function rgId(rg: string): string {
     return `rg:${rg}`;
   }
@@ -60,6 +66,7 @@
       extraProps?: Array<[string, string]>;  // non-cidr props, e.g. [["sku","Basic"], ["gateway-type","Vpn"]]
       height?: number;
     };
+    classes?: string;
   }
 
   /** Collect all non-cidr props as display-friendly (key, value) pairs. */
@@ -119,7 +126,7 @@
             range: cidrToRange(p) ? `${cidrToRange(p)!.first} – ${cidrToRange(p)!.last}` : undefined,
             extraProps,
           };
-          visualNodes.push({ data: { ...nodeData, height: estimateHeight(nodeData) } });
+          visualNodes.push({ data: { ...nodeData, height: estimateHeight(nodeData) }, classes: `ctx-${contextOf(n.kind)}` });
         });
       } else {
         const cidr = displayCidr(n);
@@ -136,7 +143,7 @@
           range: cidr && cidrToRange(cidr) ? `${cidrToRange(cidr)!.first} – ${cidrToRange(cidr)!.last}` : undefined,
           extraProps,
         };
-        visualNodes.push({ data: { ...nodeData, height: estimateHeight(nodeData) } });
+        visualNodes.push({ data: { ...nodeData, height: estimateHeight(nodeData) }, classes: `ctx-${contextOf(n.kind)}` });
       }
     }
 
@@ -207,6 +214,29 @@
             "width": 190,
             "height": "data(height)",
             "label": "",
+            "shadow-blur": 6,
+            "shadow-color": "#0b2447",
+            "shadow-opacity": 0.15,
+            "shadow-offset-x": 0,
+            "shadow-offset-y": 2,
+          } as any,
+        },
+        {
+          selector: "node.ctx-network",
+          style: {
+            "background-fill": "linear-gradient",
+            "background-gradient-stop-colors": "#f0f7ff #cfe3fb",
+            "background-gradient-stop-positions": "0 100",
+            "background-gradient-direction": "to-bottom-right",
+          } as any,
+        },
+        {
+          selector: "node.ctx-dns",
+          style: {
+            "background-fill": "linear-gradient",
+            "background-gradient-stop-colors": "#faf5ff #e9d5ff",
+            "background-gradient-stop-positions": "0 100",
+            "background-gradient-direction": "to-bottom-right",
           } as any,
         },
         { selector: "node[origin = 'Ghost']", style: { "border-color": "#888", "border-style": "dashed" } as any },
@@ -225,7 +255,10 @@
           selector: "node.rg",
           style: {
             "shape": "round-rectangle",
-            "background-color": "#fafcff",
+            "background-fill": "linear-gradient",
+            "background-gradient-stop-colors": "#fafcff #eef5ff",
+            "background-gradient-stop-positions": "0 100",
+            "background-gradient-direction": "to-bottom",
             "border-color": "#4a90e2",
             "border-width": 1.5,
             "border-style": "dashed",
@@ -236,7 +269,7 @@
             "color": "#4a90e2",
             "font-size": 12,
             "font-weight": 700,
-            "text-background-color": "#fafcff",
+            "text-background-color": "#ffffff",
             "text-background-opacity": 1,
             "text-background-padding": "6px",
             "padding": "18px",
@@ -312,7 +345,7 @@
 
   :global(.azn) {
     font-family: system-ui, sans-serif;
-    padding: 14px 10px 6px 10px;
+    padding: 18px 10px 6px 10px;
     min-width: 150px;
     max-width: 210px;
     text-align: center;
@@ -321,19 +354,21 @@
   }
   :global(.azn-pill) {
     position: absolute;
-    top: 2px;
-    left: 6px;
-    font-size: 9px; font-weight: 600;
-    padding: 1px 7px;
+    top: 3px;
+    left: 4px;
+    z-index: 2;
+    font-size: 9px; font-weight: 700;
+    padding: 2px 8px;
     border-radius: 10px;
-    background: #eaf3ff; color: #0b2447;
+    background: #ffffff; color: #0b2447;
     border: 1px solid #4a90e2;
     text-transform: lowercase;
-    letter-spacing: .02em;
+    letter-spacing: .04em;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    box-shadow: 0 1px 2px rgba(11, 36, 71, 0.15);
   }
-  :global(.azn-name) { font-weight: 700; font-size: 12px; color: #0b2447; }
+  :global(.azn-name) { font-weight: 700; font-size: 13px; color: #0b2447; letter-spacing: -0.01em; }
   :global(.azn-cidr) { color: #c9184a; font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 2px; }
   :global(.azn-range) { color: #444; font-size: 10px; font-variant-numeric: tabular-nums; }
   :global(.azn-prop) { color: #555; font-size: 10px; margin-top: 1px; }
