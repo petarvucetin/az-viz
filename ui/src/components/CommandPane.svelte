@@ -294,7 +294,7 @@
 <style>
   .pane { padding:10px; background:#fafafa; height:100%; box-sizing:border-box; overflow:auto; }
   .lbl { display:block; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:#666; margin:10px 0 4px; }
-  textarea { width:100%; font-family:monospace; font-size:12px; box-sizing:border-box; }
+  textarea { width:100%; font-family:var(--app-mono-font, monospace); font-size:12px; box-sizing:border-box; }
   .btn-row { display:flex; gap:6px; margin-top:6px; }
   .btn-row button { flex:1; padding:6px; margin:0; }
   .btn-row button.secondary { background:#f5f5f5; color:#444; border:1px solid #ccc; }
@@ -315,7 +315,7 @@
   .row.dim { opacity:0.45; font-style:italic; }
   .row.dim:hover { opacity:0.75; }
   .rg-row { font-weight:700; color:#4a90e2; letter-spacing:.02em; }
-  .rg-name { font-family:system-ui, sans-serif; font-size:12px; }
+  .rg-name { font-family:var(--app-ui-font, system-ui, sans-serif); font-size:12px; }
   .caret {
     display:inline-flex; align-items:center; justify-content:center;
     width:12px; height:12px; flex-shrink:0;
@@ -350,6 +350,6 @@
   .cmd-kind[data-k="private-dns-zone"] { background:#f5f3ff; color:#4c1d95; border-color:#7c3aed; }
   .cmd-kind[data-k="private-dns-link"] { background:#ede9fe; color:#5b21b6; border-color:#8b5cf6; }
   .cmd-kind.kind-var { background:#fff7ed; color:#9a3412; border-color:#fb923c; }
-  .cmd-name { font-family:monospace; color:#0b2447; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cmd-name { font-family:var(--app-mono-font, monospace); color:#0b2447; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .err { color:#b53030; font-size:12px; margin-top:6px; white-space:pre-wrap; }
 </style>

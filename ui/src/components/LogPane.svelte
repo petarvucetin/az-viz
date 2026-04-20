@@ -53,7 +53,7 @@
   .log {
     flex:1; background:#1e1e1e; color:#d0d0d0;
     padding:8px; border-radius:4px;
-    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-family: var(--app-mono-font, ui-monospace, Menlo, Consolas, monospace);
     font-size:11px; line-height:1.45; overflow:auto; margin:0;
   }
   .line { white-space: pre-wrap; word-break: break-word; display:flex; gap:6px; align-items:baseline; }

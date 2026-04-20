@@ -239,13 +239,13 @@
 </div>
 
 <style>
-  .pane { padding:10px; font-family:system-ui, sans-serif; }
+  .pane { padding:10px; font-family:var(--app-ui-font, system-ui, sans-serif); }
   .lbl { font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:#666; margin-bottom:6px; }
   .info { font-size:12px; }
   .title { font-size:13px; margin-bottom:8px; color:#0b2447; }
   .row { display:flex; justify-content:space-between; gap:8px; padding:2px 0; line-height:1.4; }
   .k { color:#666; font-size:11px; text-transform:uppercase; letter-spacing:.03em; flex-shrink:0; }
-  .v { font-family:monospace; font-size:11px; color:#222; text-align:right; word-break:break-all; }
+  .v { font-family:var(--app-mono-font, monospace); font-size:11px; color:#222; text-align:right; word-break:break-all; }
   .cidr { color:#c9184a; }
   .range { color:#444; }
   .status-running { color:#b58022; }
@@ -265,10 +265,10 @@
   .btn.destructive { color:#b53030; }
   .btn.destructive:hover:not([disabled]) { background:#fdf0f0; border-color:#b53030; }
   .vbody { margin-top:4px; }
-  .vbody textarea { width:100%; box-sizing:border-box; font-family:monospace; font-size:11px; resize:vertical; }
+  .vbody textarea { width:100%; box-sizing:border-box; font-family:var(--app-mono-font, monospace); font-size:11px; resize:vertical; }
   .resolved-box {
     width:100%; box-sizing:border-box;
-    font-family:monospace; font-size:11px;
+    font-family:var(--app-mono-font, monospace); font-size:11px;
     resize:vertical;
     background:#fff; color:#0b2447;
     border:1px solid #ccc; border-radius:3px;

@@ -30,7 +30,7 @@
     color: #4a90e2;
     font-size: 12px;
     font-weight: 700;
-    font-family: system-ui, sans-serif;
+    font-family: var(--app-ui-font, system-ui, sans-serif);
     white-space: nowrap;
     pointer-events: none;
   }

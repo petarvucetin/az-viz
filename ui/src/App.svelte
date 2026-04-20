@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { ipc, onRunEvent } from "./lib/ipc";
   import { appState } from "./lib/store.svelte";
+  import { loadSettings, applySettingsToDocument, saveSettings } from "./lib/settings";
   import Toolbar from "./components/Toolbar.svelte";
   import AuthBanner from "./components/AuthBanner.svelte";
   import CommandPane from "./components/CommandPane.svelte";
@@ -14,12 +15,25 @@
 
   onMount(() => {
     let unlisten: (() => void) | null = null;
+    loadSettings();
+    applySettingsToDocument();
     (async () => {
       const snap = await ipc.snapshot();
       appState.applySnapshot(snap);
       unlisten = await onRunEvent(ev => appState.applyRunEvent(ev));
     })();
     return () => { if (unlisten) unlisten(); };
+  });
+
+  // Re-apply + persist whenever any setting changes. Destructure so the
+  // reads are explicit and can't be optimized out as unused statements.
+  $effect(() => {
+    const { uiFont, monoFont, fontSize } = appState.settings;
+    const root = document.documentElement.style;
+    root.setProperty("--app-ui-font",   uiFont);
+    root.setProperty("--app-mono-font", monoFont);
+    root.setProperty("--app-font-size", `${fontSize}px`);
+    saveSettings();
   });
 
   function startResize(e: PointerEvent) {
@@ -86,7 +100,11 @@
 
 <style>
   :global(html, body, #app) { height:100%; margin:0; }
-  .app { display:flex; flex-direction:column; height:100vh; font-family:system-ui, sans-serif; }
+  .app {
+    display:flex; flex-direction:column; height:100vh;
+    font-family: var(--app-ui-font, system-ui, sans-serif);
+    font-size: var(--app-font-size, 12px);
+  }
   .main { flex:1; display:grid; min-height:0; min-width:0; }
   .canvas-wrap { background:#fff; border-left:1px solid #ddd; min-height:0; min-width:0; }
   .v-resizer {

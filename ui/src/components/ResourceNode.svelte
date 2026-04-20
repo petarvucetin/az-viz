@@ -62,7 +62,7 @@
 
 <style>
   .azn {
-    font-family: system-ui, sans-serif;
+    font-family: var(--app-ui-font, system-ui, sans-serif);
     width: 100%; height: 100%;
     box-sizing: border-box;
     padding: 6px 10px;

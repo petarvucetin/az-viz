@@ -42,7 +42,7 @@
     border-radius: 8px;
     box-shadow: 0 2px 6px rgba(154, 52, 18, 0.12);
     color: #7c2d12;
-    font-family: system-ui, sans-serif;
+    font-family: var(--app-ui-font, system-ui, sans-serif);
   }
   .var-node.has-value {
     border-style: solid;
@@ -68,7 +68,7 @@
     margin-bottom: 4px;
   }
   .name {
-    font-family: monospace;
+    font-family: var(--app-mono-font, monospace);
     font-weight: 700; font-size: 13px;
     color: #7c2d12;
     word-break: break-all;

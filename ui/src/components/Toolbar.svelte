@@ -4,6 +4,7 @@
   import { ipc } from "../lib/ipc";
   import { keyOf } from "../lib/blocking";
   import { appState } from "../lib/store.svelte";
+  import SettingsPopover from "./SettingsPopover.svelte";
 
   let version = $state("");
   let verifying = $state(false);
@@ -49,6 +50,7 @@
     Auto Create
   </label>
   <span class="spacer"></span>
+  <SettingsPopover />
   {#if version}<span class="version">v{version}</span>{/if}
 </div>
 

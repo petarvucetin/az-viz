@@ -23,6 +23,12 @@ class AppState {
 
   autoCreate = $state(false);
 
+  settings = $state({
+    uiFont: "system-ui, sans-serif",
+    monoFont: "ui-monospace, Menlo, Consolas, monospace",
+    fontSize: 12,
+  });
+
   applySnapshot(snap: GraphSnapshot) {
     this.nodes = snap.nodes;
     this.edges = snap.edges;
