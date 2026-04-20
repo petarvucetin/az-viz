@@ -274,5 +274,8 @@
   .canvas { width: 100%; height: 100%; background: #fff; }
   :global(.svelte-flow__background) { background: #fff; }
   :global(.svelte-flow__node) { border-radius: 0; background: transparent; border: none; padding: 0; }
+  :global(.svelte-flow__node-rg) { pointer-events: none; }
   :global(.svelte-flow__attribution) { display: none; }
+  :global(.svelte-flow__edges) { z-index: 5; }
+  :global(.svelte-flow__edge-path) { stroke-width: 1.5; stroke: #4a90e2; fill: none; }
 </style>

@@ -29,7 +29,7 @@
   $: originClass = data.origin === "Ghost" ? "origin-ghost" : "origin-declared";
 </script>
 
-<Handle type="target" position={Position.Top} style="opacity:0; pointer-events:none;" />
+<Handle type="target" position={Position.Top} style="opacity:0;" />
 
 <div
   class="azn {statusClass} {originClass}"
@@ -51,7 +51,7 @@
   {/if}
 </div>
 
-<Handle type="source" position={Position.Bottom} style="opacity:0; pointer-events:none;" />
+<Handle type="source" position={Position.Bottom} style="opacity:0;" />
 
 <style>
   .azn {
