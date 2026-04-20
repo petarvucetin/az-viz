@@ -276,13 +276,6 @@
             "border-width": 3,
             "border-color": "#0b2447",
           } as any },
-        { selector: "edge.selected",
-          style: {
-            "width": 3,
-            "line-color": "#0b2447",
-            "target-arrow-color": "#0b2447",
-            "z-index": 10,
-          } as any },
         {
           selector: "node.rg",
           style: {
@@ -319,6 +312,13 @@
             "taxi-turn": "50%",
           } as any,
         },
+        { selector: "edge.selected",
+          style: {
+            "width": 3,
+            "line-color": "#0b2447",
+            "target-arrow-color": "#0b2447",
+            "z-index": 10,
+          } as any },
       ],
     });
 
