@@ -34,6 +34,7 @@ fn kind_from_str(s: &str) -> Option<NodeKind> {
         "nic" => NodeKind::Nic,
         "lb" => NodeKind::Lb,
         "route-table" => NodeKind::RouteTable,
+        "vnet-gateway" => NodeKind::VnetGateway,
         "rg" => NodeKind::ResourceGroup,
         _ => return None,
     })

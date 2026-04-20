@@ -41,6 +41,7 @@ fn kind_to_az_subcommand(kind: NodeKind) -> &'static str {
         NodeKind::Nic => "nic",
         NodeKind::Lb => "lb",
         NodeKind::RouteTable => "route-table",
+        NodeKind::VnetGateway => "vnet-gateway",
         NodeKind::ResourceGroup => "group",
     }
 }

@@ -44,5 +44,13 @@
     "produces": { "kind": "route-table", "name_from": "--name" },
     "scope":    { "rg": "--resource-group", "location": "--location" },
     "refs":     []
+  },
+  "network vnet-gateway create": {
+    "produces": { "kind": "vnet-gateway", "name_from": "--name" },
+    "scope":    { "rg": "--resource-group", "location": "--location" },
+    "refs": [
+      { "kind": "vnet",      "via": "--vnet",                "required": true },
+      { "kind": "public-ip", "via": "--public-ip-addresses", "required": true }
+    ]
   }
 }
