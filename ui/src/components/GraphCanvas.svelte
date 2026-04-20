@@ -206,6 +206,7 @@
             "background-color": "#fafcff",
             "border-color": "#4a90e2",
             "border-width": 1.5,
+            "border-style": "dashed",
             "label": "data(label)",
             "text-halign": "center",
             "text-valign": "top",
