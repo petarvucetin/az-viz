@@ -6,7 +6,6 @@
   import { nodes, edges, selectedNodeKey, fitSignal } from "../lib/store";
   import type { Node as GNode, Edge as GEdge, NodeKind } from "../lib/types";
   import { cidrToRange, cidrContains } from "../lib/cidr";
-  import { KIND_ICONS } from "../lib/icons";
 
   cytoscape.use(dagre);
   nodeHtmlLabel(cytoscape as any);
@@ -162,7 +161,6 @@
   }
 
   function nodeHtmlTemplate(data: VisualNode["data"]): string {
-    const icon = KIND_ICONS[data.kind];
     const range = data.range ?? "";
     const cidr = data.cidr ?? "";
     const countSuffix = (() => {
@@ -176,7 +174,7 @@
     return `
       <div class="azn">
         <div class="azn-head">
-          <img class="azn-icon" src="${icon}" alt="" />
+          <span class="azn-pill">${escapeHtml(data.kind)}</span>
           <span class="azn-name">${escapeHtml(data.name)}</span>
         </div>
         ${cidr ? `<div class="azn-cidr">${escapeHtml(cidr)}${countSuffix}</div>` : ""}
@@ -316,8 +314,18 @@
     text-align: center;
     line-height: 1.3;
   }
-  :global(.azn-head) { display: flex; align-items: center; justify-content: center; gap: 6px; }
-  :global(.azn-icon) { width: 14px; height: 14px; flex-shrink: 0; }
+  :global(.azn-head) { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; }
+  :global(.azn-pill) {
+    font-size: 9px; font-weight: 600;
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: #eaf3ff; color: #0b2447;
+    border: 1px solid #4a90e2;
+    text-transform: lowercase;
+    letter-spacing: .02em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
   :global(.azn-name) { font-weight: 700; font-size: 12px; color: #0b2447; }
   :global(.azn-cidr) { color: #c9184a; font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 2px; }
   :global(.azn-range) { color: #444; font-size: 10px; font-variant-numeric: tabular-nums; }
