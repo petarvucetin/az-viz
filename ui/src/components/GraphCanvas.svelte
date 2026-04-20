@@ -3,7 +3,7 @@
   import cytoscape from "cytoscape";
   import dagre from "cytoscape-dagre";
   import nodeHtmlLabel from "cytoscape-node-html-label";
-  import { nodes, edges, selectedNodeKey } from "../lib/store";
+  import { nodes, edges, selectedNodeKey, fitSignal } from "../lib/store";
   import type { Node as GNode, Edge as GEdge, NodeKind } from "../lib/types";
   import { cidrToRange, cidrContains } from "../lib/cidr";
   import { KIND_ICONS } from "../lib/icons";
@@ -172,7 +172,7 @@
   onMount(() => {
     cy = cytoscape({
       container,
-      wheelSensitivity: 0.2,
+      wheelSensitivity: 1.0,
       style: [
         {
           selector: "node[kind]",
@@ -270,6 +270,11 @@
     if (key) {
       cy.nodes(`[logicalKey = "${key}"]`).addClass("selected");
     }
+  }
+
+  // Fit-to-screen signal from Toolbar.
+  $: if (cy && $fitSignal > 0) {
+    cy.fit(undefined, 30);
   }
 
   onDestroy(() => {

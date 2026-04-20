@@ -22,3 +22,6 @@ export function applyRunEvent(ev: RunEvent) {
 }
 
 export const lastError = writable<string | null>(null);
+
+// Incremented by Toolbar to trigger GraphCanvas to fit the viewport.
+export const fitSignal = writable<number>(0);
