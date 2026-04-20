@@ -181,6 +181,7 @@
             "background-color": "#ffffff",
             "border-color": "#4a90e2",
             "border-width": 1.5,
+            "border-style": "dashed",
             "width": 190,
             "height": 68,
             "label": "",
@@ -193,6 +194,11 @@
         { selector: "node[status = 'missing']", style: { "border-color": "#ff8c1a", "border-style": "dashed" } as any },
         { selector: "node[status = 'exists']",  style: { "border-color": "#2a8f3d" } as any },
         { selector: "node[status = 'verifying']", style: { "border-color": "#b58022" } as any },
+        { selector: "node.selected",
+          style: {
+            "border-width": 3,
+            "border-color": "#0b2447",
+          } as any },
         {
           selector: "node.rg",
           style: {
@@ -254,6 +260,15 @@
     cy.elements().remove();
     cy.add(buildElements($nodes, $edges) as any);
     cy.layout({ name: "dagre", rankDir: "TB", nodeSep: 40, rankSep: 60 } as any).run();
+  }
+
+  // Apply .selected class to all visual nodes sharing the selected logical key.
+  $: if (cy) {
+    cy.$("node.selected").removeClass("selected");
+    const key = $selectedNodeKey;
+    if (key) {
+      cy.nodes(`[logicalKey = "${key}"]`).addClass("selected");
+    }
   }
 
   onDestroy(() => {
