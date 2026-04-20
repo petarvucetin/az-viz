@@ -166,7 +166,9 @@
     }
 
     // 3. Edges — retarget source when VNet has multiple prefixes (VNet→Subnet direction)
-    const resultEdges: SFEdge[] = es.map((e, i) => {
+    // Edge IDs are content-based (not positional) so reconciliation is stable
+    // when the edge list is reordered or grows.
+    const resultEdges: SFEdge[] = es.map((e) => {
       const fromKey = keyOf(e.from);
       const toKey = keyOf(e.to);
       let source = fromKey;
@@ -185,7 +187,7 @@
       const isSelected = selKey !== null && (logicalOf(source) === selKey || logicalOf(toKey) === selKey);
       const edgeColor = isSelected ? "#0b2447" : "#4a90e2";
       return {
-        id: `e${i}`,
+        id: `${source}~${toKey}/${e.via}`,
         source,
         target: toKey,
         type: "default",
