@@ -188,7 +188,7 @@
       .join("");
     return `
       <div class="azn">
-        <span class="azn-pill">${escapeHtml(data.kind)}</span>
+        <span class="azn-pill" data-k="${escapeHtml(data.kind)}">${escapeHtml(data.kind)}</span>
         <div class="azn-name">${escapeHtml(data.name)}</div>
         ${cidr ? `<div class="azn-cidr">${escapeHtml(cidr)}${countSuffix}</div>` : ""}
         ${range ? `<div class="azn-range">${escapeHtml(range)}</div>` : ""}
@@ -305,7 +305,7 @@
     ]);
 
     cy.add(buildElements($nodes, $edges) as any);
-    cy.layout({ name: "dagre", rankDir: "TB", nodeSep: 40, rankSep: 60 } as any).run();
+    cy.layout({ name: "dagre", rankDir: "TB", nodeSep: 24, rankSep: 44, ranker: "tight-tree" } as any).run();
 
     cy.on("tap", "node[kind]", (ev) => {
       const logical = ev.target.data("logicalKey") as string;
@@ -317,7 +317,7 @@
   $: if (cy) {
     cy.elements().remove();
     cy.add(buildElements($nodes, $edges) as any);
-    cy.layout({ name: "dagre", rankDir: "TB", nodeSep: 40, rankSep: 60 } as any).run();
+    cy.layout({ name: "dagre", rankDir: "TB", nodeSep: 24, rankSep: 44, ranker: "tight-tree" } as any).run();
   }
 
   // Apply .selected class to all visual nodes sharing the selected logical key.
@@ -361,14 +361,27 @@
     font-size: 9px; font-weight: 700;
     padding: 2px 8px;
     border-radius: 10px;
-    background: #ffffff; color: #0b2447;
-    border: 1px solid #4a90e2;
+    background: #f3f4f6; color: #374151;
+    border: 1px solid #9ca3af;
     text-transform: lowercase;
     letter-spacing: .04em;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
     box-shadow: 0 1px 2px rgba(11, 36, 71, 0.15);
   }
+  :global(.azn-pill[data-k="vnet"])          { background:#e0f2fe; color:#0369a1; border-color:#0ea5e9; }
+  :global(.azn-pill[data-k="subnet"])        { background:#dcfce7; color:#15803d; border-color:#22c55e; }
+  :global(.azn-pill[data-k="nsg"])           { background:#fef3c7; color:#92400e; border-color:#f59e0b; }
+  :global(.azn-pill[data-k="nsg-rule"])      { background:#ffedd5; color:#9a3412; border-color:#f97316; }
+  :global(.azn-pill[data-k="public-ip"])     { background:#cffafe; color:#0e7490; border-color:#06b6d4; }
+  :global(.azn-pill[data-k="nic"])           { background:#f3e8ff; color:#6b21a8; border-color:#a855f7; }
+  :global(.azn-pill[data-k="lb"])            { background:#fce7f3; color:#9d174d; border-color:#ec4899; }
+  :global(.azn-pill[data-k="route-table"])   { background:#fef9c3; color:#854d0e; border-color:#eab308; }
+  :global(.azn-pill[data-k="vnet-gateway"])  { background:#e0e7ff; color:#3730a3; border-color:#6366f1; }
+  :global(.azn-pill[data-k="local-gateway"]) { background:#ccfbf1; color:#115e59; border-color:#14b8a6; }
+  :global(.azn-pill[data-k="vpn-connection"]){ background:#ffe4e6; color:#9f1239; border-color:#f43f5e; }
+  :global(.azn-pill[data-k="vnet-peering"])  { background:#ecfccb; color:#3f6212; border-color:#84cc16; }
+  :global(.azn-pill[data-k="dns-resolver"])  { background:#ede9fe; color:#5b21b6; border-color:#8b5cf6; }
   :global(.azn-name) { font-weight: 700; font-size: 13px; color: #0b2447; letter-spacing: -0.01em; text-align: center; }
   :global(.azn-cidr) { color: #c9184a; font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 2px; }
   :global(.azn-range) { color: #444; font-size: 10px; font-variant-numeric: tabular-nums; }
