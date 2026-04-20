@@ -78,5 +78,19 @@
     "props": {
       "connection-type": "--connection-type"
     }
+  },
+  "dns-resolver create": {
+    "produces": { "kind": "dns-resolver", "name_from": "--name" },
+    "scope":    { "rg": "--resource-group", "location": "--location" },
+    "refs": [
+      { "kind": "vnet", "via": "--id", "required": false }
+    ]
+  },
+  "dns-resolver inbound-endpoint create": {
+    "produces": { "kind": "dns-resolver-inbound-endpoint", "name_from": "--name" },
+    "scope":    { "rg": "--resource-group", "location": "--location" },
+    "refs": [
+      { "kind": "dns-resolver", "via": "--dns-resolver-name", "required": true }
+    ]
   }
 }

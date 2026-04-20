@@ -4,14 +4,14 @@ pub enum TokenizeError {
     Empty,
     #[error("expected 'az' as first token")]
     MissingAz,
-    #[error("expected 'network' as second token")]
-    MissingNetwork,
     #[error("shell tokenization failed: {0}")]
     Shell(String),
 }
 
-/// Tokenizes a line and verifies it begins with `az network`.
-/// Returns the tokens **after** `az` (i.e., starting with `network`).
+/// Tokenizes a line and verifies it begins with `az`.
+/// Returns the tokens **after** `az`. The argmap's longest-prefix match
+/// decides which subcommand path is recognized (e.g. `network vnet create`,
+/// `dns-resolver inbound-endpoint create`, `group create`, etc.).
 pub fn tokenize(line: &str) -> Result<Vec<String>, TokenizeError> {
     let trimmed = line.trim();
     if trimmed.is_empty() { return Err(TokenizeError::Empty); }
@@ -19,9 +19,6 @@ pub fn tokenize(line: &str) -> Result<Vec<String>, TokenizeError> {
     let tokens = shell_words::split(&joined).map_err(|e| TokenizeError::Shell(e.to_string()))?;
     if tokens.first().map(|s| s.as_str()) != Some("az") {
         return Err(TokenizeError::MissingAz);
-    }
-    if tokens.get(1).map(|s| s.as_str()) != Some("network") {
-        return Err(TokenizeError::MissingNetwork);
     }
     Ok(tokens.into_iter().skip(1).collect())
 }
@@ -57,8 +54,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_network() {
-        assert_eq!(tokenize("az group create").unwrap_err(), TokenizeError::MissingNetwork);
+    fn accepts_any_az_subcommand() {
+        // Tokenizer no longer hard-codes 'network' — argmap decides what's supported.
+        let toks = tokenize("az dns-resolver inbound-endpoint create").unwrap();
+        assert_eq!(toks, ["dns-resolver","inbound-endpoint","create"]);
     }
 
     #[test]

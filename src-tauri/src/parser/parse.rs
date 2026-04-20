@@ -37,6 +37,8 @@ fn kind_from_str(s: &str) -> Option<NodeKind> {
         "vnet-gateway" => NodeKind::VnetGateway,
         "local-gateway" => NodeKind::LocalGateway,
         "vpn-connection" => NodeKind::VpnConnection,
+        "dns-resolver" => NodeKind::DnsResolver,
+        "dns-resolver-inbound-endpoint" => NodeKind::DnsResolverInboundEndpoint,
         "rg" => NodeKind::ResourceGroup,
         _ => return None,
     })

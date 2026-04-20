@@ -58,6 +58,7 @@
       cidr?: string;
       range?: string;
       extraProps?: Array<[string, string]>;  // non-cidr props, e.g. [["sku","Basic"], ["gateway-type","Vpn"]]
+      height?: number;
     };
   }
 
@@ -71,6 +72,13 @@
       else if (Array.isArray(v)) out.push([k, v.filter(x => typeof x === "string").join(", ")]);
     }
     return out;
+  }
+
+  function estimateHeight(data: { cidr?: string; range?: string; extraProps?: Array<[string, string]> }): number {
+    // Base (pill top-pad + name + bottom pad): 38. Each additional row adds ~14.
+    const extra = data.extraProps ? Math.min(data.extraProps.length, 3) : 0;
+    const rows = (data.cidr ? 1 : 0) + (data.range ? 1 : 0) + extra;
+    return 38 + rows * 14;
   }
 
   interface VisualEdge {
@@ -98,27 +106,8 @@
       if (n.kind === "vnet" && prefixes.length > 1) {
         vnetPrefixesByKey[key] = prefixes;
         prefixes.forEach((p, i) => {
-          visualNodes.push({
-            data: {
-              id: vnetVisualId(key, i),
-              logicalKey: key,
-              commandId: n.command_id ?? null,
-              parent,
-              kind: n.kind,
-              name: n.name,
-              origin: n.origin,
-              status: n.status.kind,
-              cidr: p,
-              range: cidrToRange(p) ? `${cidrToRange(p)!.first} – ${cidrToRange(p)!.last}` : undefined,
-              extraProps,
-            },
-          });
-        });
-      } else {
-        const cidr = displayCidr(n);
-        visualNodes.push({
-          data: {
-            id: key,
+          const nodeData = {
+            id: vnetVisualId(key, i),
             logicalKey: key,
             commandId: n.command_id ?? null,
             parent,
@@ -126,11 +115,28 @@
             name: n.name,
             origin: n.origin,
             status: n.status.kind,
-            cidr,
-            range: cidr && cidrToRange(cidr) ? `${cidrToRange(cidr)!.first} – ${cidrToRange(cidr)!.last}` : undefined,
+            cidr: p,
+            range: cidrToRange(p) ? `${cidrToRange(p)!.first} – ${cidrToRange(p)!.last}` : undefined,
             extraProps,
-          },
+          };
+          visualNodes.push({ data: { ...nodeData, height: estimateHeight(nodeData) } });
         });
+      } else {
+        const cidr = displayCidr(n);
+        const nodeData = {
+          id: key,
+          logicalKey: key,
+          commandId: n.command_id ?? null,
+          parent,
+          kind: n.kind,
+          name: n.name,
+          origin: n.origin,
+          status: n.status.kind,
+          cidr,
+          range: cidr && cidrToRange(cidr) ? `${cidrToRange(cidr)!.first} – ${cidrToRange(cidr)!.last}` : undefined,
+          extraProps,
+        };
+        visualNodes.push({ data: { ...nodeData, height: estimateHeight(nodeData) } });
       }
     }
 
@@ -199,7 +205,7 @@
             "border-width": 1.5,
             "border-style": "dashed",
             "width": 190,
-            "height": 68,
+            "height": "data(height)",
             "label": "",
           } as any,
         },

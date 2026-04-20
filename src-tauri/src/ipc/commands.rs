@@ -193,6 +193,15 @@ pub async fn do_verify_node(
                     None => return Err(format!("nsg rule {} has no parent NSG in the graph", logical_key)),
                 }
             }
+            NodeKind::DnsResolverInboundEndpoint => {
+                let parent = g.parents(&node_id).find_map(|p| {
+                    if matches!(p.kind, NodeKind::DnsResolver) { Some(p.name.clone()) } else { None }
+                });
+                match parent {
+                    Some(n) => Some(n),
+                    None => return Err(format!("dns-resolver inbound-endpoint {} has no parent dns-resolver in the graph", logical_key)),
+                }
+            }
             _ => None,
         }
     };
@@ -222,6 +231,26 @@ pub async fn do_verify_node(
                 "--name".into(), node_id.name.clone(),
                 "--resource-group".into(), node_id.resource_group.clone(),
                 "--nsg-name".into(), nsg.clone(),
+            ]);
+            if let Some(ref sub) = node_id.subscription { a.extend(["--subscription".into(), sub.clone()]); }
+            a
+        }
+        NodeKind::DnsResolver => {
+            let mut a: Vec<String> = vec!["dns-resolver".into(), "show".into()];
+            a.extend([
+                "--name".into(), node_id.name.clone(),
+                "--resource-group".into(), node_id.resource_group.clone(),
+            ]);
+            if let Some(ref sub) = node_id.subscription { a.extend(["--subscription".into(), sub.clone()]); }
+            a
+        }
+        NodeKind::DnsResolverInboundEndpoint => {
+            let parent = parent_name.as_ref().expect("dns-resolver-inbound-endpoint parent checked above");
+            let mut a: Vec<String> = vec!["dns-resolver".into(), "inbound-endpoint".into(), "show".into()];
+            a.extend([
+                "--name".into(), node_id.name.clone(),
+                "--resource-group".into(), node_id.resource_group.clone(),
+                "--dns-resolver-name".into(), parent.clone(),
             ]);
             if let Some(ref sub) = node_id.subscription { a.extend(["--subscription".into(), sub.clone()]); }
             a
