@@ -321,11 +321,23 @@
   }
 
   // Apply .selected class to all visual nodes sharing the selected logical key.
+  // If the selected node is off-screen, animate-pan the viewport to center it.
   $: if (cy) {
     cy.$("node.selected").removeClass("selected");
     const key = $selectedNodeKey;
     if (key) {
-      cy.nodes(`[logicalKey = "${key}"]`).addClass("selected");
+      const sel = cy.nodes(`[logicalKey = "${key}"]`);
+      sel.addClass("selected");
+      if (sel.length > 0) {
+        const first = sel.first();
+        const bb = first.renderedBoundingBox();
+        const inView =
+          bb.x1 >= 0 && bb.x2 <= cy.width() &&
+          bb.y1 >= 0 && bb.y2 <= cy.height();
+        if (!inView) {
+          cy.animate({ center: { eles: first }, duration: 300 });
+        }
+      }
     }
   }
 
