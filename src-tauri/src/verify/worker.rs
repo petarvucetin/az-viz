@@ -45,7 +45,6 @@ fn kind_to_az_subcommand(kind: NodeKind) -> &'static str {
         NodeKind::LocalGateway => "local-gateway",
         NodeKind::VpnConnection => "vpn-connection",
         NodeKind::DnsResolver => "dns-resolver",
-        NodeKind::DnsResolverInboundEndpoint => "dns-resolver inbound-endpoint",
         NodeKind::ResourceGroup => "group",
     }
 }

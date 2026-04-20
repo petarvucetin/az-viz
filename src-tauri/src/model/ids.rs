@@ -4,8 +4,9 @@ use super::scope::Scope;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum NodeKind {
-    Vnet, Subnet, Nsg, NsgRule, PublicIp, Nic, Lb, RouteTable, VnetGateway, LocalGateway, VpnConnection,
-    DnsResolver, DnsResolverInboundEndpoint,
+    Vnet, Subnet, Nsg, NsgRule, PublicIp, Nic, Lb, RouteTable,
+    VnetGateway, LocalGateway, VpnConnection,
+    DnsResolver,
     #[serde(rename = "rg")]
     ResourceGroup,
 }
@@ -25,7 +26,6 @@ impl NodeKind {
             NodeKind::LocalGateway => "local-gateway",
             NodeKind::VpnConnection => "vpn-connection",
             NodeKind::DnsResolver => "dns-resolver",
-            NodeKind::DnsResolverInboundEndpoint => "dns-resolver-inbound-endpoint",
             NodeKind::ResourceGroup => "rg",
         }
     }
@@ -67,7 +67,6 @@ impl NodeId {
             "local-gateway" => NodeKind::LocalGateway,
             "vpn-connection" => NodeKind::VpnConnection,
             "dns-resolver" => NodeKind::DnsResolver,
-            "dns-resolver-inbound-endpoint" => NodeKind::DnsResolverInboundEndpoint,
             "rg" => NodeKind::ResourceGroup,
             _ => return None,
         };

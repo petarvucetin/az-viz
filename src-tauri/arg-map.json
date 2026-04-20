@@ -87,10 +87,12 @@
     ]
   },
   "dns-resolver inbound-endpoint create": {
-    "produces": { "kind": "dns-resolver-inbound-endpoint", "name_from": "--name" },
+    "produces": { "kind": "dns-resolver", "name_from": "--dns-resolver-name" },
     "scope":    { "rg": "--resource-group", "location": "--location" },
-    "refs": [
-      { "kind": "dns-resolver", "via": "--dns-resolver-name", "required": true }
-    ]
+    "refs":     [],
+    "props": {
+      "inbound-endpoint":  "--name",
+      "ip-configurations": "--ip-configurations"
+    }
   }
 }

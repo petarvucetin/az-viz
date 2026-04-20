@@ -35,8 +35,6 @@ export const KIND_ICONS: Record<NodeKind, string> = {
   "vpn-connection": svgDataUrl(`<rect x="1" y="6" width="4" height="4" rx="0.5"/><rect x="11" y="6" width="4" height="4" rx="0.5"/><path d="M5 8 L8 6 L8 10 L11 8"/>`),
   // Globe for DNS resolver
   "dns-resolver": svgDataUrl(`<circle cx="8" cy="8" r="6"/><path d="M2 8 H14 M8 2 Q11 5 11 8 Q11 11 8 14 M8 2 Q5 5 5 8 Q5 11 8 14"/>`),
-  // Globe + arrow-in (inbound endpoint)
-  "dns-resolver-inbound-endpoint": svgDataUrl(`<circle cx="10" cy="8" r="4.5"/><path d="M1 8 H5 M3 6 L1 8 L3 10"/>`),
   // Folder (Resource group)
   "rg": svgDataUrl(`<path d="M1.5 4 H6 L7.5 5.5 H14.5 V13 Q14.5 14 13.5 14 H2.5 Q1.5 14 1.5 13 Z"/>`),
 };

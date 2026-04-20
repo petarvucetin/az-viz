@@ -1,4 +1,4 @@
-export type NodeKind = "vnet" | "subnet" | "nsg" | "nsg-rule" | "public-ip" | "nic" | "lb" | "route-table" | "vnet-gateway" | "local-gateway" | "vpn-connection" | "dns-resolver" | "dns-resolver-inbound-endpoint" | "rg";
+export type NodeKind = "vnet" | "subnet" | "nsg" | "nsg-rule" | "public-ip" | "nic" | "lb" | "route-table" | "vnet-gateway" | "local-gateway" | "vpn-connection" | "dns-resolver" | "rg";
 export type Origin = "Declared" | "Ghost";
 
 export interface Scope { resource_group: string; subscription?: string; location?: string }

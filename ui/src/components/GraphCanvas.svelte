@@ -181,8 +181,9 @@
       const r = cidrToRange(data.cidr);
       return r ? ` (${r.count})` : "";
     })();
+    const truncate = (s: string, max = 40) => s.length > max ? s.slice(0, max - 1) + "\u2026" : s;
     const extras = (data.extraProps ?? []).slice(0, 3)
-      .map(([k, v]) => `<div class="azn-prop"><span class="azn-pk">${escapeHtml(k)}:</span> ${escapeHtml(v)}</div>`)
+      .map(([k, v]) => `<div class="azn-prop"><span class="azn-pk">${escapeHtml(k)}:</span> ${escapeHtml(truncate(v))}</div>`)
       .join("");
     return `
       <div class="azn">
