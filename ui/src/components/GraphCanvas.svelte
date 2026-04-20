@@ -160,7 +160,6 @@
           extent: "parent",
           width: w,
           height: h,
-          draggable: false,
           selectable: false,
         });
       }
@@ -189,7 +188,7 @@
         id: `e${i}`,
         source,
         target: toKey,
-        type: "smoothstep",
+        type: "default",
         style: isSelected
           ? "stroke:#0b2447;stroke-width:3;"
           : "stroke:#4a90e2;stroke-width:1.5;",
@@ -270,9 +269,15 @@
   }
 
   // ─── Re-layout signal ────────────────────────────────────────────────────────
-
-  $: if ($layoutSignal > 0) {
-    buildAndLayout($storeNodes, $storeEdges, $selectedNodeKey);
+  // Only fires when $layoutSignal changes, not when the graph data changes.
+  // (Prevents double-ELK runs on node add which can race and drop edges.)
+  let lastLayoutSignal = 0;
+  $: {
+    const v = $layoutSignal;
+    if (v !== lastLayoutSignal && v > 0) {
+      lastLayoutSignal = v;
+      buildAndLayout($storeNodes, $storeEdges, null);
+    }
   }
 </script>
 
@@ -283,11 +288,11 @@
       nodes={sfNodes}
       edges={sfEdges}
       fitView
-      nodesDraggable={false}
+      nodesDraggable={true}
       nodesConnectable={false}
       elementsSelectable={false}
       deleteKey={null}
-      defaultEdgeOptions={{ type: "smoothstep", style: "stroke:#4a90e2;stroke-width:1.5;", markerEnd: { type: MarkerType.ArrowClosed, color: "#4a90e2" } }}
+      defaultEdgeOptions={{ type: "default", style: "stroke:#4a90e2;stroke-width:1.5;", markerEnd: { type: MarkerType.ArrowClosed, color: "#4a90e2" } }}
       on:nodeclick={onNodeClick}
     >
       <FlowActions {fitSignal} />
