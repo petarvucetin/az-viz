@@ -6,7 +6,7 @@ use super::scope::Scope;
 pub enum NodeKind {
     Vnet, Subnet, Nsg, NsgRule, PublicIp, Nic, Lb, RouteTable,
     VnetGateway, LocalGateway, VpnConnection, VnetPeering,
-    DnsResolver,
+    DnsResolver, PrivateDnsZone,
     #[serde(rename = "rg")]
     ResourceGroup,
 }
@@ -27,6 +27,7 @@ impl NodeKind {
             NodeKind::VpnConnection => "vpn-connection",
             NodeKind::VnetPeering => "vnet-peering",
             NodeKind::DnsResolver => "dns-resolver",
+            NodeKind::PrivateDnsZone => "private-dns-zone",
             NodeKind::ResourceGroup => "rg",
         }
     }
@@ -69,6 +70,7 @@ impl NodeId {
             "vpn-connection" => NodeKind::VpnConnection,
             "vnet-peering" => NodeKind::VnetPeering,
             "dns-resolver" => NodeKind::DnsResolver,
+            "private-dns-zone" => NodeKind::PrivateDnsZone,
             "rg" => NodeKind::ResourceGroup,
             _ => return None,
         };

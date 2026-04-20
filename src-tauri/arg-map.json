@@ -108,5 +108,10 @@
       "inbound-endpoint":  "--name",
       "ip-configurations": "--ip-configurations"
     }
+  },
+  "network private-dns zone create": {
+    "produces": { "kind": "private-dns-zone", "name_from": "--name" },
+    "scope":    { "rg": "--resource-group" },
+    "refs":     []
   }
 }

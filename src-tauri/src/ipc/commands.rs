@@ -255,6 +255,15 @@ pub async fn do_verify_node(
             if let Some(ref sub) = node_id.subscription { a.extend(["--subscription".into(), sub.clone()]); }
             a
         }
+        NodeKind::PrivateDnsZone => {
+            let mut a: Vec<String> = vec!["network".into(), "private-dns".into(), "zone".into(), "show".into()];
+            a.extend([
+                "--name".into(), node_id.name.clone(),
+                "--resource-group".into(), node_id.resource_group.clone(),
+            ]);
+            if let Some(ref sub) = node_id.subscription { a.extend(["--subscription".into(), sub.clone()]); }
+            a
+        }
         other => {
             let kind_str = match other {
                 NodeKind::Vnet => "vnet",

@@ -46,6 +46,7 @@ fn kind_to_az_subcommand(kind: NodeKind) -> &'static str {
         NodeKind::VpnConnection => "vpn-connection",
         NodeKind::VnetPeering => "vnet peering",
         NodeKind::DnsResolver => "dns-resolver",
+        NodeKind::PrivateDnsZone => "private-dns zone",
         NodeKind::ResourceGroup => "group",
     }
 }
