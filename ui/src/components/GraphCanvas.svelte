@@ -276,6 +276,13 @@
             "border-width": 3,
             "border-color": "#0b2447",
           } as any },
+        { selector: "edge.selected",
+          style: {
+            "width": 3,
+            "line-color": "#0b2447",
+            "target-arrow-color": "#0b2447",
+            "z-index": 10,
+          } as any },
         {
           selector: "node.rg",
           style: {
@@ -308,7 +315,7 @@
             "target-arrow-color": "#4a90e2",
             "target-arrow-shape": "triangle",
             "curve-style": "taxi",
-            "taxi-direction": "horizontal",
+            "taxi-direction": "vertical",
             "taxi-turn": "50%",
           } as any,
         },
@@ -333,7 +340,7 @@
       name: "elk",
       elk: {
         "algorithm": "layered",
-        "elk.direction": "RIGHT",
+        "elk.direction": "DOWN",
         "elk.layered.spacing.nodeNodeBetweenLayers": 60,
         "elk.spacing.nodeNode": 70,
         "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
@@ -359,7 +366,7 @@
       name: "elk",
       elk: {
         "algorithm": "layered",
-        "elk.direction": "RIGHT",
+        "elk.direction": "DOWN",
         "elk.layered.spacing.nodeNodeBetweenLayers": 60,
         "elk.spacing.nodeNode": 70,
         "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
@@ -372,14 +379,15 @@
     } as any).run();
   }
 
-  // Apply .selected class to all visual nodes sharing the selected logical key.
-  // If the selected node is off-screen, animate-pan the viewport to center it.
+  // Apply .selected class to all visual nodes sharing the selected logical key
+  // AND to any edges connected to those nodes. Pan to the node if off-screen.
   $: if (cy) {
-    cy.$("node.selected").removeClass("selected");
+    cy.$("node.selected, edge.selected").removeClass("selected");
     const key = $selectedNodeKey;
     if (key) {
       const sel = cy.nodes(`[logicalKey = "${key}"]`);
       sel.addClass("selected");
+      sel.connectedEdges().addClass("selected");
       if (sel.length > 0) {
         const first = sel.first();
         const bb = first.renderedBoundingBox();
@@ -404,7 +412,7 @@
       name: "elk",
       elk: {
         "algorithm": "layered",
-        "elk.direction": "RIGHT",
+        "elk.direction": "DOWN",
         "elk.layered.spacing.nodeNodeBetweenLayers": 60,
         "elk.spacing.nodeNode": 70,
         "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
