@@ -72,9 +72,11 @@ export function saveSettings(): void {
 /// read these via `var(--app-ui-font)` etc.
 export function applySettingsToDocument(): void {
   const s = appState.settings;
+  const ui = normalizeFontStack(s.uiFont);
+  const mono = normalizeFontStack(s.monoFont);
   const root = document.documentElement.style;
-  root.setProperty("--app-ui-font",   normalizeFontStack(s.uiFont));
-  root.setProperty("--app-mono-font", normalizeFontStack(s.monoFont));
+  root.setProperty("--app-ui-font",   ui);
+  root.setProperty("--app-mono-font", mono);
   root.setProperty("--app-font-size", `${s.fontSize}px`);
 }
 

@@ -120,6 +120,84 @@
   let verifyDisabled = $derived(!selected || isRunning || isVerifying);
   let executeDisabled = $derived(!selected || isRunning);
 
+  // Node-local execution error, shown under the buttons until the next run.
+  let execError = $state<string | null>(null);
+
+  type ErrLine =
+    | { kind: "blank" }
+    | { kind: "text"; text: string }
+    | { kind: "kv"; key: string; value: string; indent: boolean };
+
+  /// Break an Azure ARM URL into labeled (key,value) lines.
+  function armUrlLines(url: string): ErrLine[] {
+    const parts = url.split("/").filter(Boolean);
+    const idx = (k: string) => parts.findIndex(p => p.toLowerCase() === k.toLowerCase());
+    const subI = idx("subscriptions");
+    const rgI = idx("resourceGroups");
+    const provI = idx("providers");
+    if (subI < 0 || parts.length <= subI + 1) {
+      return [{ kind: "text", text: url }];
+    }
+    const out: ErrLine[] = [];
+    out.push({ kind: "kv", key: "Sub", value: parts[subI + 1], indent: true });
+    if (rgI >= 0 && parts.length > rgI + 1) {
+      out.push({ kind: "kv", key: "RG", value: parts[rgI + 1], indent: true });
+    }
+    if (provI >= 0) {
+      const after = parts.slice(provI + 1);
+      if (after.length >= 2) {
+        const ns = after[0];
+        const tailName = after[after.length - 1];
+        const middle = after.slice(1, -1);
+        out.push({ kind: "kv", key: "providers", value: `${ns}/${middle.join("/")}`, indent: true });
+        out.push({ kind: "kv", key: "resource",  value: tailName, indent: true });
+      } else if (after.length === 1) {
+        out.push({ kind: "kv", key: "providers", value: after[0], indent: true });
+      }
+    }
+    return out;
+  }
+
+  const ARM_URL_RE = /\/subscriptions\/[A-Za-z0-9-]+(?:\/[A-Za-z0-9._/-]+)*/;
+  const SECTION_RE = /^(ERROR|Code|Message):/i;
+
+  /// Build a structured line list:
+  ///  - Blank line before ERROR:/Code:/Message: sections for readability.
+  ///  - Every ARM URL becomes its own indented key/value block.
+  function formatExecErrorLines(raw: string): ErrLine[] {
+    const out: ErrLine[] = [];
+    const rawLines = raw.split(/\r?\n/);
+    for (let i = 0; i < rawLines.length; i++) {
+      const ln = rawLines[i];
+      if (SECTION_RE.test(ln.trim()) && out.length > 0) {
+        out.push({ kind: "blank" });
+      }
+      // Look for an ARM URL inside the line; if found, split into pre/url/post.
+      const m = ln.match(ARM_URL_RE);
+      if (m) {
+        const start = ln.indexOf(m[0]);
+        const pre = ln.slice(0, start).trimEnd();
+        const post = ln.slice(start + m[0].length).trimStart();
+        if (pre) out.push({ kind: "text", text: pre });
+        out.push(...armUrlLines(m[0]));
+        if (post) out.push({ kind: "text", text: post });
+      } else if (ln.trim().length === 0) {
+        out.push({ kind: "blank" });
+      } else {
+        out.push({ kind: "text", text: ln });
+      }
+    }
+    return out;
+  }
+
+  let execErrorLines = $derived(execError ? formatExecErrorLines(execError) : []);
+
+  // Clear the local error whenever the user switches nodes.
+  $effect(() => {
+    appState.selectedNodeKey;
+    execError = null;
+  });
+
   async function refreshSnapshot() {
     const snap = await ipc.snapshot();
     appState.applySnapshot(snap);
@@ -144,8 +222,23 @@
 
   async function execute() {
     if (!selected) return;
-    try { await ipc.executeNode(keyOf(selected.id)); await refreshSnapshot(); }
-    catch { /* lastError set by wrapper */ }
+    // Each execution clears the prior error before running.
+    execError = null;
+    try {
+      await ipc.executeNode(keyOf(selected.id));
+      await refreshSnapshot();
+      // If the node ended up in a Failed state, surface its stderr tail here.
+      const key = keyOf(selected.id);
+      const after = appState.nodes.find(n => keyOf(n.id) === key);
+      if (after && after.status.kind === "failed") {
+        const tail = (after.status as { stderr_tail?: string }).stderr_tail ?? "";
+        const code = (after.status as { exit_code?: number }).exit_code ?? -1;
+        execError = tail.trim() ? `Exit ${code}\n${tail}` : `Exit ${code}`;
+      }
+    } catch (e) {
+      const msg = String(e);
+      if (msg !== "not_logged_in") execError = msg;
+    }
   }
 
   function rangeFor(c: string): string {
@@ -232,6 +325,25 @@
         <button class="btn" onclick={execute} disabled={executeDisabled}>Execute</button>
       {/if}
     </div>
+    {#if execError}
+      <div class="exec-error">
+        <div class="exec-error-label">Execution error</div>
+        <div class="exec-error-body">
+          {#each execErrorLines as ln}
+            {#if ln.kind === "blank"}
+              <div class="err-blank"></div>
+            {:else if ln.kind === "text"}
+              <div class="err-text-line">{ln.text}</div>
+            {:else}
+              <div class="err-kv" class:indent={ln.indent}>
+                <span class="err-k">{ln.key}:</span>
+                <span class="err-v">{ln.value}</span>
+              </div>
+            {/if}
+          {/each}
+        </div>
+      </div>
+    {/if}
   {:else}
     <div class="muted">No node selected</div>
   {/if}
@@ -278,4 +390,29 @@
   }
   .resolved-box.empty { color:#888; font-style:italic; }
   code { font-size:11px; background:#f5f5f5; padding:1px 3px; border-radius:2px; }
+  .exec-error {
+    margin-top:10px;
+    border:1px solid #f5b5b5;
+    background:#fff5f5;
+    border-radius:4px;
+    padding:6px 8px;
+  }
+  .exec-error-label {
+    font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+    color:#b53030; margin-bottom:4px;
+  }
+  .exec-error-body {
+    margin:0;
+    font-family: var(--app-mono-font, monospace);
+    font-size:11px;
+    color:#7f1d1d;
+    max-height: 260px;
+    overflow: auto;
+  }
+  .err-blank { height: 6px; }
+  .err-text-line { white-space: pre-wrap; word-break: break-word; }
+  .err-kv { display:flex; gap:6px; align-items:baseline; padding:1px 0; }
+  .err-kv.indent { padding-left: 16px; }
+  .err-k { color:#9a3412; flex-shrink:0; }
+  .err-v { font-weight: 700; color:#7f1d1d; word-break: break-all; }
 </style>
