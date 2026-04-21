@@ -362,7 +362,22 @@
     sfEdges = rawEdges;
   }
 
-  // Rebuild + layout whenever the graph data changes.
+  // Structural signature: set of node ids + parent links + edge src/tgt.
+  // When it's unchanged, the snapshot only carries status/prop updates and
+  // we patch node data in place — no re-layout, no viewport jump.
+  function structuralSig(rawNodes: SFNode[], rawEdges: SFEdge[]): string {
+    const ns = rawNodes
+      .map(n => `${n.id}|${n.parentId ?? ""}|${n.type ?? ""}`)
+      .sort()
+      .join(",");
+    const es = rawEdges.map(e => `${e.source}>${e.target}`).sort().join(",");
+    return `${ns}||${es}`;
+  }
+  let lastSig = "";
+
+  // Rebuild + layout whenever the graph data changes structurally; otherwise
+  // patch the existing sfNodes in place so execution status changes (e.g.
+  // succeeded → green border + ✓) don't disturb the viewport.
   $effect(() => {
     const ns = appState.nodes;
     const es = appState.edges;
@@ -370,7 +385,27 @@
     const vc = appState.varConsumers;
     const gs = appState.groups;
     const gn = appState.groupNodes;
-    buildAndLayout(ns, es, vs, vc, gs, gn, null);
+    const { nodes: rawNodes, edges: rawEdges } = buildElements(ns, es, vs, vc, gs, gn, appState.selectedNodeKey);
+    const sig = structuralSig(rawNodes, rawEdges);
+
+    untrack(() => {
+      if (sig === lastSig && sfNodes.length > 0) {
+        const byId: Record<string, SFNode> = {};
+        for (const n of rawNodes) byId[n.id] = n;
+        sfNodes = sfNodes.map(existing => {
+          const fresh = byId[existing.id];
+          if (!fresh) return existing;
+          return {
+            ...existing,
+            data: fresh.data,
+          };
+        });
+        sfEdges = rawEdges;
+        return;
+      }
+      lastSig = sig;
+      buildAndLayout(ns, es, vs, vc, gs, gn, null);
+    });
   });
 
   // Apply selection-only updates without full ELK re-layout.

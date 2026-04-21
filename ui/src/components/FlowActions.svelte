@@ -26,6 +26,17 @@
         const w = (n.measured?.width ?? n.width ?? 0);
         const h = (n.measured?.height ?? n.height ?? 0);
         const vp = getViewport();
+        const container = document.querySelector<HTMLElement>(".svelte-flow");
+        if (container) {
+          const cw = container.clientWidth;
+          const ch = container.clientHeight;
+          const sx = n.position.x * vp.zoom + vp.x;
+          const sy = n.position.y * vp.zoom + vp.y;
+          const sw = w * vp.zoom;
+          const sh = h * vp.zoom;
+          const fullyVisible = sx >= 0 && sy >= 0 && sx + sw <= cw && sy + sh <= ch;
+          if (fullyVisible) return;
+        }
         setCenter(n.position.x + w / 2, n.position.y + h / 2, { zoom: vp.zoom, duration: 300 });
       }, 0);
     });

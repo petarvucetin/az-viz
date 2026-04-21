@@ -43,6 +43,9 @@
   data-ctx={data.context}
   title={data.blocked ? "cannot execute — parent not declared" : undefined}
 >
+  {#if data.status === "succeeded" || data.status === "exists"}
+    <span class="azn-check" title="deployed">✓</span>
+  {/if}
   <span class="azn-pill" data-k={data.kind}>{data.kind}</span>
   <div class="azn-name">{data.name}</div>
   {#if data.cidr}
@@ -119,6 +122,23 @@
   .azn-pill[data-k="private-dns-zone"] { background:#f5f3ff; color:#4c1d95; border-color:#7c3aed; }
   .azn-pill[data-k="private-dns-link"] { background:#ede9fe; color:#5b21b6; border-color:#8b5cf6; }
 
+  .azn { position: relative; }
+  .azn-check {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #2a8f3d;
+    color: #fff;
+    font-weight: 900;
+    font-size: 13px;
+    line-height: 20px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(11, 36, 71, 0.3);
+    pointer-events: none;
+  }
   .azn-name { font-weight: 700; font-size: 13px; color: #0b2447; letter-spacing: -0.01em; text-align: center; word-break: break-all; }
   .azn-cidr { color: #c9184a; font-size: 11px; font-variant-numeric: tabular-nums; margin-top: 2px; }
   .azn-range { color: #444; font-size: 10px; font-variant-numeric: tabular-nums; }

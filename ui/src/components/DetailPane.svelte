@@ -120,6 +120,101 @@
   let verifyDisabled = $derived(!selected || isRunning || isVerifying);
   let executeDisabled = $derived(!selected || isRunning);
 
+  // Descendants of the selected node in dependency order (edges point
+  // parent→child here: from=ref, to=produced). Includes the selected node
+  // first, then declared descendants via Kahn's topo sort restricted to the
+  // descendant set.
+  let cascadeOrder = $derived.by<typeof appState.nodes>(() => {
+    if (!selected) return [];
+    const keyOfNode = (n: typeof appState.nodes[number]) => keyOf(n.id);
+    const rootKey = keyOfNode(selected);
+    const byKey = new Map(appState.nodes.map(n => [keyOfNode(n), n]));
+    const outAdj = new Map<string, string[]>();
+    const inAdj = new Map<string, string[]>();
+    for (const e of appState.edges) {
+      const f = keyOf(e.from), t = keyOf(e.to);
+      (outAdj.get(f) ?? outAdj.set(f, []).get(f)!).push(t);
+      (inAdj.get(t) ?? inAdj.set(t, []).get(t)!).push(f);
+    }
+    const reach = new Set<string>([rootKey]);
+    const stack = [rootKey];
+    while (stack.length) {
+      const k = stack.pop()!;
+      for (const c of outAdj.get(k) ?? []) {
+        if (!reach.has(c)) { reach.add(c); stack.push(c); }
+      }
+    }
+    // Kahn's over `reach`: count only in-edges originating inside `reach`.
+    const indeg = new Map<string, number>();
+    for (const k of reach) {
+      let d = 0;
+      for (const p of inAdj.get(k) ?? []) if (reach.has(p)) d++;
+      indeg.set(k, d);
+    }
+    const queue: string[] = [];
+    for (const [k, d] of indeg) if (d === 0) queue.push(k);
+    const ordered: string[] = [];
+    while (queue.length) {
+      const k = queue.shift()!;
+      ordered.push(k);
+      for (const c of outAdj.get(k) ?? []) {
+        if (!reach.has(c)) continue;
+        indeg.set(c, (indeg.get(c) ?? 1) - 1);
+        if (indeg.get(c) === 0) queue.push(c);
+      }
+    }
+    // Fallback: if a cycle left nodes unordered, append them in reach order.
+    if (ordered.length < reach.size) {
+      for (const k of reach) if (!ordered.includes(k)) ordered.push(k);
+    }
+    return ordered
+      .map(k => byKey.get(k))
+      .filter((n): n is typeof appState.nodes[number] => !!n);
+  });
+
+  let cascadeExecutable = $derived(
+    cascadeOrder.filter(n => n.origin === "Declared" && n.command_id)
+  );
+  let childCount = $derived(Math.max(0, cascadeExecutable.length - 1));
+  let showCascade = $derived(!!selected && isDeclared && childCount > 0);
+
+  let cascading = $state(false);
+
+  async function executeWithChildren() {
+    if (!selected || cascading) return;
+    cascading = true;
+    execError = null;
+    const failures: string[] = [];
+    try {
+      for (const n of cascadeExecutable) {
+        const key = keyOf(n.id);
+        appState.appendLog(`[cascade] ${n.kind}/${n.name}`);
+        try {
+          await ipc.executeNode(key);
+        } catch (e) {
+          const msg = String(e);
+          if (msg === "not_logged_in") break;
+          failures.push(`${n.kind}/${n.name}: ${msg.split(/\r?\n/)[0]}`);
+          continue;
+        }
+        await refreshSnapshot();
+        const after = appState.nodes.find(x => keyOf(x.id) === key);
+        if (after?.status.kind === "failed") {
+          const tail = (after.status as { stderr_tail?: string }).stderr_tail ?? "";
+          const code = (after.status as { exit_code?: number }).exit_code ?? -1;
+          failures.push(
+            `${n.kind}/${n.name} (exit ${code})${tail.trim() ? `\n${tail}` : ""}`
+          );
+        }
+      }
+      if (failures.length > 0) {
+        execError = `${failures.length} node(s) failed:\n\n${failures.join("\n\n")}`;
+      }
+    } finally {
+      cascading = false;
+    }
+  }
+
   // Node-local execution error, shown under the buttons until the next run.
   let execError = $state<string | null>(null);
 
@@ -322,7 +417,17 @@
         <button class="btn" onclick={verify} disabled={verifyDisabled}>Check Azure</button>
       {/if}
       {#if showExecute}
-        <button class="btn" onclick={execute} disabled={executeDisabled}>Execute</button>
+        <button class="btn" onclick={execute} disabled={executeDisabled || cascading}>Execute</button>
+      {/if}
+      {#if showCascade}
+        <button
+          class="btn"
+          onclick={executeWithChildren}
+          disabled={executeDisabled || cascading}
+          title="Execute this node and all descendants in dependency order"
+        >
+          {cascading ? "Executing…" : `Execute with children (${childCount})`}
+        </button>
       {/if}
     </div>
     {#if execError}
