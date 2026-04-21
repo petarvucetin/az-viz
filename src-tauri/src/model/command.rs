@@ -26,6 +26,10 @@ pub struct Command {
     /// (e.g. a token containing `$SUBNET_ID`). Populated at parse time.
     #[serde(default)]
     pub var_refs: Vec<String>,
+    /// Group id this command belongs to, if any. Set by the batch-add
+    /// IPC from `#` comment lines preceding the command.
+    #[serde(default)]
+    pub group_id: Option<String>,
 }
 
 #[cfg(test)]
@@ -45,6 +49,7 @@ mod tests {
             refs: vec![],
             warnings: vec![],
             var_refs: vec![],
+            group_id: None,
         };
         let json = serde_json::to_string(&cmd).unwrap();
         let back: Command = serde_json::from_str(&json).unwrap();

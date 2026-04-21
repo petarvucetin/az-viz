@@ -10,7 +10,12 @@
   import ResourceNode from "./ResourceNode.svelte";
   import ResourceGroupNode from "./ResourceGroupNode.svelte";
   import VariableNode from "./VariableNode.svelte";
+  import GroupNode from "./GroupNode.svelte";
   import FlowActions from "./FlowActions.svelte";
+  import FlowApiCapture from "./FlowApiCapture.svelte";
+  import type { useSvelteFlow } from "@xyflow/svelte";
+
+  let flowApi: ReturnType<typeof useSvelteFlow> | null = $state(null);
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -74,6 +79,7 @@
     resource: ResourceNode as any,
     rg: ResourceGroupNode as any,
     variable: VariableNode as any,
+    group: GroupNode as any,
   };
 
   // ─── Local state ────────────────────────────────────────────────────────────
@@ -89,6 +95,8 @@
     es: GEdge[],
     variables: import("../lib/types").Variable[],
     varConsumers: Record<string, string[]>,
+    groups: import("../lib/types").Group[],
+    groupNodes: Record<string, string[]>,
     selKey: string | null,
   ): { nodes: SFNode[]; edges: SFEdge[] } {
     const blocked = computeBlocked(ns, es);
@@ -107,13 +115,45 @@
       });
     }
 
+    // Group frame nodes. parentId = RG of the group's first member.
+    // Build a nodeKey → groupId reverse map at the same time.
+    const nodeKeyToGroupId: Record<string, string> = {};
+    const groupById: Record<string, import("../lib/types").Group> = {};
+    for (const gr of groups) groupById[gr.id] = gr;
+    for (const [gid, keys] of Object.entries(groupNodes)) {
+      for (const k of keys) nodeKeyToGroupId[k] = gid;
+    }
+    const nodesByKeyAll: Record<string, GNode> = {};
+    for (const n of ns) nodesByKeyAll[keyOf(n.id)] = n;
+    // Ordering so layered ELK places groups in declaration order (#1, #2, ...).
+    const orderedGroupIds = groups.map(g => g.id).filter(gid => (groupNodes[gid]?.length ?? 0) > 0);
+    for (const gid of orderedGroupIds) {
+      const keys = groupNodes[gid] ?? [];
+      const first = keys[0] ? nodesByKeyAll[keys[0]] : undefined;
+      if (!first) continue;
+      const rgParent = rgId(first.scope.resource_group);
+      const gr = groupById[gid];
+      resultNodes.push({
+        id: `group-${gid}`,
+        type: "group",
+        position: { x: 0, y: 0 },
+        data: { title: gr?.title ?? "(group)", logicalKey: `group:${gid}`,
+                selectedDirect: selKey === `group:${gid}` },
+        parentId: rgParent,
+        expandParent: true,
+        draggable: true,
+        selectable: false,
+      });
+    }
+
     const vnetPrefixesByKey: Record<string, string[]> = {};
     const nodesByKey: Record<string, GNode> = {};
     for (const n of ns) nodesByKey[keyOf(n.id)] = n;
 
     for (const n of ns) {
       const key = keyOf(n.id);
-      const parent = rgId(n.scope.resource_group);
+      const gid = nodeKeyToGroupId[key];
+      const parent = gid ? `group-${gid}` : rgId(n.scope.resource_group);
       const prefixes = vnetPrefixes(n);
       const extraP = otherProps(n);
 
@@ -148,6 +188,7 @@
             width: w,
             height: h,
             selectable: false,
+            draggable: true,
           });
         });
       } else {
@@ -161,31 +202,42 @@
           position: { x: 0, y: 0 },
           data: d,
           parentId: parent,
+          // `expandParent: true` lets xyflow grow the parent on all four
+          // sides during drag (it internally adjusts drag-start state when
+          // shifting the parent origin). `extent` is intentionally omitted
+          // because it snapshots parent bounds and doesn't re-read them,
+          // which blocks continuous expansion mid-drag.
           expandParent: true,
           width: w,
           height: h,
           selectable: false,
+          draggable: true,
         });
       }
     }
 
-    // Variable nodes: attach each referenced variable inside the RG of its
-    // first consumer. Draw an edge from the consumer → variable so ELK
-    // places them adjacently. A variable with multiple consumers renders
-    // once with multiple incoming edges.
+    // Variable nodes: attach each referenced variable to the same parent as
+    // its first consumer — group if the consumer is grouped, RG otherwise.
+    // Draw an edge from the consumer → variable so ELK places them
+    // adjacently. A variable with multiple consumers renders once with
+    // multiple incoming edges.
     const varEdgesFromConsumer: Array<{ consumerKey: string; varName: string }> = [];
-    const varParentRg: Record<string, string> = {};
+    const varParent: Record<string, string> = {};
     for (const [consumerKey, names] of Object.entries(varConsumers)) {
       const consumer = nodesByKey[consumerKey];
       if (!consumer) continue;
+      const consumerGroup = nodeKeyToGroupId[consumerKey];
+      const parentId = consumerGroup
+        ? `group-${consumerGroup}`
+        : rgId(consumer.scope.resource_group);
       for (const name of names) {
-        if (!(name in varParentRg)) varParentRg[name] = rgId(consumer.scope.resource_group);
+        if (!(name in varParent)) varParent[name] = parentId;
         varEdgesFromConsumer.push({ consumerKey, varName: name });
       }
     }
     const varByName: Record<string, import("../lib/types").Variable> = {};
     for (const v of variables) varByName[v.name] = v;
-    for (const [name, parent] of Object.entries(varParentRg)) {
+    for (const [name, parent] of Object.entries(varParent)) {
       const v = varByName[name];
       if (!v) continue;
       const logicalKey = `var:${name}`;
@@ -205,6 +257,7 @@
         width: Math.max(120, name.length * 8 + 30),
         height: 58,
         selectable: false,
+        draggable: true,
       });
     }
 
@@ -264,10 +317,12 @@
     ns: GNode[], es: GEdge[],
     variables: import("../lib/types").Variable[],
     varConsumers: Record<string, string[]>,
+    groups: import("../lib/types").Group[],
+    groupNodes: Record<string, string[]>,
     selKey: string | null,
   ) {
     const gen = ++layoutGen;
-    const { nodes: rawNodes, edges: rawEdges } = buildElements(ns, es, variables, varConsumers, selKey);
+    const { nodes: rawNodes, edges: rawEdges } = buildElements(ns, es, variables, varConsumers, groups, groupNodes, selKey);
 
     const layoutNodes = rawNodes.map(n => ({
       id: n.id,
@@ -278,6 +333,17 @@
     
     const layoutEdges = rawEdges.map(e => ({ id: e.id, source: e.source, target: e.target }));
 
+    // Ordering edges (ELK-only, not rendered) pin consecutive groups into
+    // declaration order so the layout shows #1 above #2 above #3 etc.
+    const orderedGroupIds = groups.map(g => g.id).filter(gid => (groupNodes[gid]?.length ?? 0) > 0);
+    for (let i = 0; i + 1 < orderedGroupIds.length; i++) {
+      layoutEdges.push({
+        id: `order-${orderedGroupIds[i]}-${orderedGroupIds[i + 1]}`,
+        source: `group-${orderedGroupIds[i]}`,
+        target: `group-${orderedGroupIds[i + 1]}`,
+      });
+    }
+
     const { positions, sizes } = await runLayout(layoutNodes, layoutEdges);
 
     if (gen !== layoutGen) return;
@@ -285,7 +351,7 @@
     const positioned: SFNode[] = rawNodes.map(n => {
       const pos = positions[n.id] ?? { x: 0, y: 0 };
       const out: SFNode = { ...n, position: pos };
-      if (n.type === "rg") {
+      if (n.type === "rg" || n.type === "group") {
         const sz = sizes[n.id];
         if (sz) { out.width = sz.width; out.height = sz.height; }
       }
@@ -302,7 +368,9 @@
     const es = appState.edges;
     const vs = appState.variables;
     const vc = appState.varConsumers;
-    buildAndLayout(ns, es, vs, vc, null);
+    const gs = appState.groups;
+    const gn = appState.groupNodes;
+    buildAndLayout(ns, es, vs, vc, gs, gn, null);
   });
 
   // Apply selection-only updates without full ELK re-layout.
@@ -344,9 +412,130 @@
 
   // ─── Node click ─────────────────────────────────────────────────────────────
 
-  function onNodeClick({ node }: { node: SFNode; event: MouseEvent | TouchEvent }) {
-    const logical = (node.data as any)?.logicalKey as string | undefined;
+  function onNodeClick(evt: { node: SFNode; event: MouseEvent | TouchEvent }) {
+    // Click payload uses `node` (drag payload uses `targetNode` — different shapes).
+    const logical = (evt.node?.data as any)?.logicalKey as string | undefined;
     if (logical) appState.selectedNodeKey = logical;
+  }
+
+  // ─── Dynamic parent resize on drag ─────────────────────────────────────────
+  // Svelte Flow's `expandParent: true` grows a parent when a dragged child
+  // crosses its edge but never shrinks it. During/after a drag we recompute
+  // each ancestor's size from the bounding box of its direct children plus
+  // padding, so the frame both expands when approached and contracts when
+  // the child moves away.
+
+  const FRAME_PAD = { left: 18, right: 18, top: 32, bottom: 18 };
+  const MIN_FRAME_W = 180;
+  const MIN_FRAME_H = 80;
+  const EDGE_GROW_THRESHOLD = 40;
+  const EDGE_GROW_STEP = 60;
+
+  // Cascading right/bottom expansion up the ancestor chain. xyflow's
+  // `expandParent: true` on each child handles the IMMEDIATE parent in all
+  // four directions (including the tricky left/top cases where parent
+  // origin must shift atomically with drag state). This handler picks up
+  // the cascade above that — if a grown group now overflows its RG, we
+  // grow the RG too. Left/top cascade is handled by xyflow at each level
+  // since every draggable child declares `expandParent: true`.
+  function onNodeDrag(evt: { targetNode: SFNode | null; event: MouseEvent | TouchEvent }) {
+    const node = evt.targetNode;
+    if (!node || !node.parentId || !flowApi) return;
+
+    // Start cascade from grandparent — xyflow already handled immediate parent.
+    const immediateParent = flowApi.getNode(node.parentId);
+    let cursor: string | undefined = immediateParent?.parentId;
+    while (cursor) {
+      const parent = flowApi.getNode(cursor);
+      if (!parent) break;
+      const parentW = (parent.width as number) ?? 0;
+      const parentH = (parent.height as number) ?? 0;
+
+      let maxX = 0, maxY = 0;
+      for (const k of flowApi.getNodes()) {
+        if (k.parentId !== cursor) continue;
+        const w = (k.width as number) ?? 0;
+        const h = (k.height as number) ?? 0;
+        const x = k.position?.x ?? 0;
+        const y = k.position?.y ?? 0;
+        if (x + w > maxX) maxX = x + w;
+        if (y + h > maxY) maxY = y + h;
+      }
+
+      let newW = parentW, newH = parentH;
+      if (maxX + EDGE_GROW_THRESHOLD > parentW) {
+        newW = Math.ceil(maxX + EDGE_GROW_THRESHOLD + EDGE_GROW_STEP);
+      }
+      if (maxY + EDGE_GROW_THRESHOLD > parentH) {
+        newH = Math.ceil(maxY + EDGE_GROW_THRESHOLD + EDGE_GROW_STEP);
+      }
+
+      if (newW !== parentW || newH !== parentH) {
+        flowApi.updateNode(cursor, { width: newW, height: newH });
+        cursor = parent.parentId;
+      } else {
+        break;
+      }
+    }
+  }
+
+  // On release, contract each ancestor back to the tight bbox + padding.
+  // This is symmetric with growth: if the tight bbox's min(x,y) drifted
+  // past the left/top padding, we shift all siblings back AND shift the
+  // parent origin the opposite way, so children keep their screen
+  // positions. Then we size width/height to the compacted bbox.
+  function onNodeDragStop(evt: { targetNode: SFNode | null; event: MouseEvent | TouchEvent }) {
+    const node = evt.targetNode;
+    if (!node || !node.parentId || !flowApi) return;
+
+    let cursor: string | undefined = node.parentId;
+    while (cursor) {
+      const parent = flowApi.getNode(cursor);
+      if (!parent) break;
+      const siblings = flowApi.getNodes().filter(k => k.parentId === cursor);
+      if (siblings.length === 0) break;
+
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const c of siblings) {
+        const w = (c.width as number) ?? 0;
+        const h = (c.height as number) ?? 0;
+        const x = c.position?.x ?? 0;
+        const y = c.position?.y ?? 0;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x + w > maxX) maxX = x + w;
+        if (y + h > maxY) maxY = y + h;
+      }
+      if (!isFinite(minX)) break;
+
+      const shiftX = FRAME_PAD.left - minX;
+      const shiftY = FRAME_PAD.top - minY;
+      if (shiftX !== 0 || shiftY !== 0) {
+        for (const c of siblings) {
+          flowApi.updateNode(c.id, {
+            position: {
+              x: (c.position?.x ?? 0) + shiftX,
+              y: (c.position?.y ?? 0) + shiftY,
+            },
+          });
+        }
+        const pp = parent.position ?? { x: 0, y: 0 };
+        flowApi.updateNode(cursor, {
+          position: { x: pp.x - shiftX, y: pp.y - shiftY },
+        });
+      }
+
+      const tightW = maxX - minX;
+      const tightH = maxY - minY;
+      const newW = Math.max(MIN_FRAME_W, Math.ceil(tightW + FRAME_PAD.left + FRAME_PAD.right));
+      const newH = Math.max(MIN_FRAME_H, Math.ceil(tightH + FRAME_PAD.top + FRAME_PAD.bottom));
+      const curW = (parent.width as number) ?? 0;
+      const curH = (parent.height as number) ?? 0;
+      if (curW !== newW || curH !== newH) {
+        flowApi.updateNode(cursor, { width: newW, height: newH });
+      }
+      cursor = parent.parentId;
+    }
   }
 
   // ─── Re-layout signal ────────────────────────────────────────────────────────
@@ -356,13 +545,19 @@
     if (v !== lastLayoutSignal && v > 0) {
       lastLayoutSignal = v;
       untrack(() => {
-        buildAndLayout(appState.nodes, appState.edges, appState.variables, appState.varConsumers, null);
+        buildAndLayout(
+          appState.nodes, appState.edges,
+          appState.variables, appState.varConsumers,
+          appState.groups, appState.groupNodes,
+          null,
+        );
       });
     }
   });
 </script>
 
 <SvelteFlowProvider>
+  <FlowApiCapture onready={(api) => flowApi = api} />
   <div class="canvas">
     <SvelteFlow
       {nodeTypes}
@@ -375,6 +570,8 @@
       deleteKey={null}
       defaultEdgeOptions={{ type: "default", style: "stroke:#4a90e2;stroke-width:1.5;", markerEnd: { type: MarkerType.ArrowClosed, color: "#4a90e2" } }}
       onnodeclick={onNodeClick}
+      onnodedrag={onNodeDrag}
+      onnodedragstop={onNodeDragStop}
     >
       <FlowActions />
     </SvelteFlow>

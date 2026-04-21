@@ -1,6 +1,6 @@
 use std::path::Path;
 use serde::{Deserialize, Serialize};
-use crate::model::{Command, Graph, Variable};
+use crate::model::{Command, Graph, Group, Variable};
 use crate::parser::{commit, parse_line, ArgMap, ParsedLine};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -16,6 +16,8 @@ pub struct ProjectFile {
     #[serde(default)]
     pub variables: Vec<Variable>,
     #[serde(default)]
+    pub groups: Vec<Group>,
+    #[serde(default)]
     pub ui_state: UiState,
 }
 
@@ -27,6 +29,7 @@ impl ProjectFile {
             version: Self::CURRENT_VERSION,
             commands: graph.commands().cloned().collect(),
             variables: graph.variables().cloned().collect(),
+            groups: graph.groups().cloned().collect(),
             ui_state: UiState::default(),
         }
     }
@@ -46,9 +49,35 @@ impl ProjectFile {
         // Preload variables so consumer commands can resolve `$NAME` refs
         // without creating ghost duplicates during rebuild.
         for v in &self.variables { g.upsert_variable(v.clone()); }
+        // Preload groups so command reattachment below doesn't need a second
+        // pass. Groups' command_id lists will be rebuilt as commands are
+        // re-parsed (they reference the old IDs which change on re-parse).
+        let mut title_to_old_id: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for gp in &self.groups {
+            g.add_group(Group { id: gp.id.clone(), title: gp.title.clone(), command_ids: vec![] });
+            title_to_old_id.insert(gp.id.clone(), gp.id.clone());
+        }
+        // Map old command_id → old group_id for restoring membership.
+        let mut old_cmd_to_group: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        for c in &self.commands {
+            if let Some(gid) = &c.group_id {
+                old_cmd_to_group.insert(c.id.clone(), gid.clone());
+            }
+        }
+        let _ = title_to_old_id; // silence unused; kept for clarity
         for c in &self.commands {
             match parse_line(&c.raw, argmap, &g)? {
-                ParsedLine::Command(p) => { commit(&mut g, p)?; }
+                ParsedLine::Command(mut p) => {
+                    if let Some(gid) = old_cmd_to_group.get(&c.id) {
+                        p.command.group_id = Some(gid.clone());
+                        let new_id = p.command.id.clone();
+                        if let Some(group) = g.group_mut(gid) {
+                            group.command_ids.push(new_id);
+                        }
+                    }
+                    commit(&mut g, p)?;
+                }
                 ParsedLine::Variable(v) => { g.upsert_variable(v); }
             }
         }

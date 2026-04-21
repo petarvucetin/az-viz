@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/tauri";
 import { listen } from "@tauri-apps/api/event";
-import type { GraphSnapshot, RunEvent, NodeStatus } from "./types";
+import type { BatchAddResult, GraphSnapshot, RunEvent, NodeStatus } from "./types";
 import { appState } from "./store.svelte";
 
 async function withErrorStore<T>(p: Promise<T>): Promise<T> {
@@ -15,6 +15,8 @@ async function withErrorStore<T>(p: Promise<T>): Promise<T> {
 
 export const ipc = {
   addCommand: (line: string) => invoke<string>("add_command", { line }),
+  addCommandsBatch: (lines: string[]) =>
+    invoke<BatchAddResult[]>("add_commands_batch", { lines }),
   snapshot: () => invoke<GraphSnapshot>("snapshot"),
   dryRun: () => invoke<string[][]>("dry_run"),
   emitScript: (path: string, flavor: "bash" | "powershell") =>

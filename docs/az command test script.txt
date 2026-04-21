@@ -1,0 +1,49 @@
+az network vnet create -g lakeflow-mssql-on-prem -n vnet-hub --address-prefixes 10.0.0.0/26 10.0.1.0/26
+
+az network vnet subnet create -g lakeflow-mssql-on-prem --vnet-name vnet-hub -n GatewaySubnet --address-prefix 10.0.0.32/27
+
+az network vnet subnet create -g lakeflow-mssql-on-prem --vnet-name vnet-hub -n snet-app --address-prefix 10.0.0.0/27
+
+az network vnet subnet create -g lakeflow-mssql-on-prem --vnet-name vnet-hub -n dns-resolver-in --address-prefix 10.0.1.0/28
+
+az network vnet subnet create -g lakeflow-mssql-on-prem --vnet-name vnet-hub -n dns-resolver-out --address-prefix 10.0.1.16/28
+
+az network public-ip create -g lakeflow-mssql-on-prem -n pip-vpngw-01 --sku Basic --allocation-method Dynamic
+
+az network vnet-gateway create -g lakeflow-mssql-on-prem -n vpngw-hub --vnet vnet-hub --public-ip-addresses pip-vpngw-01 --gateway-type Vpn --vpn-type PolicyBased --sku Basic --no-wait
+
+az network local-gateway create -g lakeflow-mssql-on-prem -n lng-onprem --gateway-ip-address 198.51.100.10 --local-address-prefixes 192.168.0.0/24
+
+az network vpn-connection create -g lakeflow-mssql-on-prem -n cn-onprem --vnet-gateway1 vpngw-hub --local-gateway2 lng-onprem --shared-key "$PSK"
+
+SUBNET_ID=$(az network vnet subnet show -g lakeflow-mssql-on-prem --vnet-name vnet-hub -n dns-resolver-in --query id -o tsv)
+
+az dns-resolver inbound-endpoint create -g lakeflow-mssql-on-prem --dns-resolver-name dns-resolver -n in-endpoint --ip-configurations "[{private-ip-allocation-method:'Dynamic',id:'$SUBNET_ID'}]"
+
+az network vnet subnet create -g lakeflow-mssql-on-prem --vnet-name vnet-dbx -n workspace-pe-subnet --address-prefix 10.0.0.112/28 --private-endpoint-network-policies Disabled
+
+
+az network vnet peering create -g lakeflow-mssql-on-prem --vnet-name vnet-hub -n hub-to-dbx --remote-vnet  vnet-dbx --allow-vnet-access --allow-forwarded-traffic --allow-gateway-transit
+
+az network vnet peering create -g lakeflow-mssql-on-prem --vnet-name vnet-dbx -n dbx-to-hub --remote-vnet vnet-hub --allow-vnet-access --allow-forwarded-traffic --use-remote-gateways
+
+
+
+az network private-dns zone create -g lakeflow-mssql-on-prem -n privatelink.azuredatabricks.net
+az network private-dns zone create -g lakeflow-mssql-on-prem -n privatelink.blob.core.windows.net
+az network private-dns zone create -g lakeflow-mssql-on-prem -n privatelink.dfs.core.windows.net
+az network private-dns zone create -g lakeflow-mssql-on-prem -n privatelink.vaultcore.azure.net
+
+
+
+az network private-dns link vnet create -g lakeflow-mssql-on-prem -n dbx-zone-hub --zone-name privatelink.azuredatabricks.net --virtual-network vnet-hub --registration-enabled false
+az network private-dns link vnet create -g lakeflow-mssql-on-prem -n dbx-zone-dbx --zone-name privatelink.azuredatabricks.net --virtual-network vnet-dbx --registration-enabled false
+
+az network private-dns link vnet create -g lakeflow-mssql-on-prem -n blob-zone-hub --zone-name privatelink.blob.core.windows.net --virtual-network vnet-hub --registration-enabled false
+az network private-dns link vnet create -g lakeflow-mssql-on-prem -n blob-zone-dbx --zone-name privatelink.blob.core.windows.net --virtual-network vnet-dbx --registration-enabled false
+
+az network private-dns link vnet create -g lakeflow-mssql-on-prem -n dfs-zone-hub --zone-name privatelink.dfs.core.windows.net --virtual-network vnet-hub --registration-enabled false
+az network private-dns link vnet create -g lakeflow-mssql-on-prem -n dfs-zone-dbx --zone-name privatelink.dfs.core.windows.net --virtual-network vnet-dbx --registration-enabled false
+
+az network private-dns link vnet create -g lakeflow-mssql-on-prem -n kv-zone-hub --zone-name privatelink.vaultcore.azure.net --virtual-network vnet-hub --registration-enabled false
+az network private-dns link vnet create -g lakeflow-mssql-on-prem -n kv-zone-dbx --zone-name privatelink.vaultcore.azure.net --virtual-network vnet-dbx --registration-enabled false

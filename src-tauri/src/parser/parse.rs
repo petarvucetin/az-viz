@@ -203,6 +203,11 @@ pub fn parse(line: &str, argmap: &ArgMap, graph: &Graph) -> Result<Parsed, Parse
             }
             continue;
         };
+        // `$NAME` or a token containing `$…` is a variable reference, not a
+        // resource name. Skip creating a ghost node / ref edge — the value
+        // will be substituted at execute time from the variable's resolved
+        // output. The `var_refs` scan below still records the dependency.
+        if val.contains('$') { continue; }
         let ref_kind = kind_from_str(&spec.kind)
             .ok_or_else(|| ParseError::MissingFlag(format!("unknown ref kind: {}", spec.kind)))?;
         let ref_id = NodeId::of(ref_kind, val.to_string(), &scope);
@@ -244,6 +249,7 @@ pub fn parse(line: &str, argmap: &ArgMap, graph: &Graph) -> Result<Parsed, Parse
         refs: ref_ids,
         warnings,
         var_refs,
+        group_id: None,
     };
 
     Ok(Parsed { command, new_nodes, new_edges, new_variables })

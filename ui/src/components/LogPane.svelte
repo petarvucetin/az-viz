@@ -75,6 +75,8 @@
   .tag-verify   { background:#cffafe; border-color:#06b6d4; color:#164e63; }
   .tag-verify-all { background:#bae6fd; border-color:#0ea5e9; color:#0c4a6e; }
   .tag-cleared  { background:#fde68a; border-color:#eab308; color:#713f12; }
+  .tag-duplicate { background:#e5e7eb; border-color:#6b7280; color:#374151; }
+  .tag-comment  { background:#dbeafe; border-color:#3b82f6; color:#1e3a8a; }
   .tag-var      { background:#fed7aa; border-color:#fb923c; color:#7c2d12; }
   .tag-error    { background:#fecaca; border-color:#dc2626; color:#7f1d1d; }
   .rest { flex:1; }

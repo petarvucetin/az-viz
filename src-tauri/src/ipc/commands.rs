@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
-use crate::model::{Edge, Node, Variable};
+use crate::model::{Edge, Group, Node, Variable};
 use crate::parser::{commit as commit_parse, parse_line, ParsedLine};
 use crate::persist::ProjectFile;
 use crate::runner::{dry_run as runner_dry_run, write_script, ScriptFlavor};
@@ -16,6 +16,10 @@ pub struct GraphSnapshot {
     /// Mapping from a command's logical node key → names of variables the
     /// command references. Lets the UI nest a variable under its consumer.
     pub var_consumers: std::collections::BTreeMap<String, Vec<String>>,
+    pub groups: Vec<Group>,
+    /// Mapping from group id → logical node keys of commands in the group,
+    /// in declaration order. Canvas uses this to parent nodes under a group.
+    pub group_nodes: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 #[tauri::command]
@@ -31,7 +35,6 @@ pub fn add_command(line: String, state: tauri::State<SessionState>) -> Result<St
         ParsedLine::Variable(v) => {
             let name = v.name.clone();
             g.upsert_variable(v);
-            // No command-id for pure variable declarations; return the variable name.
             format!("var:{name}")
         }
     };
@@ -39,6 +42,118 @@ pub fn add_command(line: String, state: tauri::State<SessionState>) -> Result<St
         let _ = ProjectFile::from_graph(&g).save(path);
     }
     Ok(id)
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum BatchAddResult {
+    /// A command (or variable assignment) was added successfully.
+    Command { id: String },
+    /// A `# <title>` header line was recognized (opens a new section).
+    Section { title: String },
+    /// The line parsed cleanly but the produced resource was already
+    /// declared by an earlier command, so it's a no-op duplicate.
+    Duplicate { line_index: usize, line: String, produces: String },
+    /// An error occurred parsing a line; subsequent lines are not processed.
+    Error { line_index: usize, line: String, message: String },
+}
+
+/// Add a batch of lines. Handles `# <title>` lines: a `#` comment opens a
+/// new group; the group is finalized only if 2+ commands follow before the
+/// next `#` or end-of-input (single-command sections stay ungrouped, per
+/// user spec).
+///
+/// Returns the per-command outcomes in order. Stops at the first parse
+/// error; the caller can display it and leave the rest of the input in the
+/// textarea for retry.
+#[tauri::command]
+pub fn add_commands_batch(
+    lines: Vec<String>,
+    state: tauri::State<SessionState>,
+) -> Result<Vec<BatchAddResult>, String> {
+    let mut g = state.graph.lock().map_err(|e| e.to_string())?;
+    let mut results: Vec<BatchAddResult> = Vec::new();
+
+    // Pending group = a `#` header has been seen; pending_ids collects the
+    // command IDs added while it's active. On group close (next `#` or EOF)
+    // we finalize to a real Group only if 2+ commands were added.
+    let mut pending_title: Option<String> = None;
+    let mut pending_ids: Vec<String> = Vec::new();
+
+    let finalize = |g: &mut crate::model::Graph,
+                    title: &Option<String>,
+                    ids: &mut Vec<String>| {
+        if let Some(t) = title {
+            // Any `#` header with at least 1 command becomes a group.
+            if ids.len() >= 1 {
+                let gid = format!("grp-{}", uuid::Uuid::new_v4());
+                g.add_group(Group { id: gid.clone(), title: t.clone(), command_ids: ids.clone() });
+                for cid in ids.iter() {
+                    if let Some(c) = g.commands_mut().find(|c| &c.id == cid) {
+                        c.group_id = Some(gid.clone());
+                    }
+                }
+            }
+        }
+        ids.clear();
+    };
+
+    for (i, raw) in lines.iter().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() { continue; }
+        if let Some(rest) = line.strip_prefix('#') {
+            // Close the previous pending group before starting a new one.
+            finalize(&mut g, &pending_title, &mut pending_ids);
+            let title = rest.trim().to_string();
+            results.push(BatchAddResult::Section { title: title.clone() });
+            pending_title = Some(title);
+            continue;
+        }
+        match parse_line(raw, &state.argmap, &g) {
+            Ok(ParsedLine::Command(p)) => {
+                let id = p.command.id.clone();
+                let produces_id = p.command.produces.clone();
+                // Detect "no-op duplicate": the produced node already exists
+                // and is already Declared by a prior command. Commit would
+                // silently merge props, which the user reads as "nothing
+                // happened". Skip the commit and return a Duplicate result.
+                let already_declared = g.node(&produces_id)
+                    .map(|n| matches!(n.origin, crate::model::Origin::Declared))
+                    .unwrap_or(false);
+                if already_declared {
+                    results.push(BatchAddResult::Duplicate {
+                        line_index: i, line: raw.clone(), produces: produces_id.display(),
+                    });
+                    continue;
+                }
+                if let Err(e) = commit_parse(&mut g, p) {
+                    results.push(BatchAddResult::Error {
+                        line_index: i, line: raw.clone(), message: e.to_string(),
+                    });
+                    break;
+                }
+                if pending_title.is_some() { pending_ids.push(id.clone()); }
+                results.push(BatchAddResult::Command { id });
+            }
+            Ok(ParsedLine::Variable(v)) => {
+                let name = v.name.clone();
+                g.upsert_variable(v);
+                results.push(BatchAddResult::Command { id: format!("var:{name}") });
+            }
+            Err(e) => {
+                results.push(BatchAddResult::Error {
+                    line_index: i, line: raw.clone(), message: e.to_string(),
+                });
+                break;
+            }
+        }
+    }
+    finalize(&mut g, &pending_title, &mut pending_ids);
+
+    if let Some(path) = state.project_path.lock().map_err(|e| e.to_string())?.as_ref() {
+        let _ = ProjectFile::from_graph(&g).save(path);
+    }
+    Ok(results)
 }
 
 #[tauri::command]
@@ -68,12 +183,26 @@ pub fn snapshot(state: tauri::State<SessionState>) -> Result<GraphSnapshot, Stri
         let key = c.produces.display();
         var_consumers.entry(key).or_default().extend(c.var_refs.iter().cloned());
     }
+    let group_nodes = build_group_nodes(&g);
     Ok(GraphSnapshot {
         nodes: ordered,
         edges: g.edges().cloned().collect(),
         variables: g.variables().cloned().collect(),
         var_consumers,
+        groups: g.groups().cloned().collect(),
+        group_nodes,
     })
+}
+
+fn build_group_nodes(g: &crate::model::Graph) -> std::collections::BTreeMap<String, Vec<String>> {
+    let mut out: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for c in g.commands() {
+        if let Some(gid) = &c.group_id {
+            out.entry(gid.clone()).or_default().push(c.produces.display());
+        }
+    }
+    out
 }
 
 #[tauri::command]
@@ -116,9 +245,11 @@ pub fn open_project(path: String, state: tauri::State<SessionState>) -> Result<G
         let key = c.produces.display();
         var_consumers.entry(key).or_default().extend(c.var_refs.iter().cloned());
     }
+    let groups = g.groups().cloned().collect();
+    let group_nodes = build_group_nodes(&g);
     *state.graph.lock().map_err(|e| e.to_string())? = g;
     *state.project_path.lock().map_err(|e| e.to_string())? = Some(p);
-    Ok(GraphSnapshot { nodes, edges, variables, var_consumers })
+    Ok(GraphSnapshot { nodes, edges, variables, var_consumers, groups, group_nodes })
 }
 
 #[tauri::command]
@@ -173,6 +304,22 @@ pub fn do_remove_command(id: &str, session: &crate::ipc::state::Session) -> Resu
 
     // Remove the produced node (drops all incident edges).
     g.remove_node(&produces).map_err(|e| e.to_string())?;
+
+    // Remove from any group it was a member of. Drop the group if removing
+    // this command leaves it with < 2 members (per the "groups need ≥ 2"
+    // rule used at creation time).
+    let group_id_opt = cmd.group_id.clone();
+    if let Some(gid) = group_id_opt {
+        if let Some(group) = g.group_mut(&gid) {
+            group.command_ids.retain(|c| c != id);
+            let remaining = group.command_ids.clone();
+            // Drop the group only if it's become empty. Single-member
+            // groups are valid (matching the "≥1" rule at creation time).
+            if remaining.is_empty() {
+                g.remove_group(&gid);
+            }
+        }
+    }
 
     // Remove the command record.
     g.remove_command(id);

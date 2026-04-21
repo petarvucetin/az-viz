@@ -28,7 +28,9 @@
       accum = "";
     }
     if (accum.trim()) merged.push(accum.trim());
-    return merged.filter(l => l && !l.startsWith("#"));
+    // Keep blank lines out but RETAIN `#` header lines — the backend needs
+    // them to partition following commands into groups.
+    return merged.filter(l => l.length > 0);
   }
 
   async function add() {
@@ -36,32 +38,46 @@
     const cmds = splitLines(line);
     if (cmds.length === 0) return;
 
+    const results = await ipc.addCommandsBatch(cmds);
     const addedCommandIds: string[] = [];
-    let processed = 0;
-    for (const cmd of cmds) {
-      try {
-        const id = await ipc.addCommand(cmd);
-        addedCommandIds.push(id);
-        processed++;
-      } catch (e) {
-        const remaining = cmds.slice(processed);
-        line = remaining.join("\n");
-        const preview = cmd.length > 80 ? cmd.slice(0, 77) + "..." : cmd;
-        localErr = `Line ${processed + 1} (${preview}): ${e}`;
-        const snap = await ipc.snapshot();
-        appState.applySnapshot(snap);
-        return;
+    const duplicates: Array<{ line_index: number; line: string; produces: string }> = [];
+    let errResult: { line_index: number; line: string; message: string } | null = null;
+    // Walk results in order so [comment] and [duplicate] logs interleave
+    // correctly (matches the input's top-to-bottom structure).
+    for (const r of results) {
+      if (r.kind === "command") addedCommandIds.push(r.id);
+      else if (r.kind === "section") appState.appendLog(`[comment] ${r.title}`);
+      else if (r.kind === "duplicate") {
+        duplicates.push(r);
+        appState.appendLog(`[duplicate] ${r.produces} already declared — skipping "${r.line}"`);
       }
+      else if (r.kind === "error") { errResult = r; break; }
     }
 
-    line = "";
+    if (errResult) {
+      // Keep the offending line + everything after in the textarea so the
+      // user can fix it; drop successfully-added lines above.
+      line = cmds.slice(errResult.line_index).join("\n");
+      const preview = errResult.line.length > 80
+        ? errResult.line.slice(0, 77) + "..."
+        : errResult.line;
+      localErr = `Line ${errResult.line_index + 1} (${preview}): ${errResult.message}`;
+    } else if (duplicates.length > 0 && addedCommandIds.length === 0) {
+      // Entire batch was duplicates — surface in the input-local error so
+      // the textarea banner makes it obvious.
+      const first = duplicates[0];
+      const preview = first.line.length > 80 ? first.line.slice(0, 77) + "..." : first.line;
+      localErr = `Skipped: ${first.produces} already declared (and ${duplicates.length - 1} more)`.replace(" and -1 more", "");
+      line = "";
+    } else {
+      line = "";
+    }
+
     const snap = await ipc.snapshot();
     appState.applySnapshot(snap);
     appState.lastError = null;
 
-    // Fire a background existence check per added command. Non-blocking: the
-    // UI keeps responding while `az ... show` runs. Results appear in the Log
-    // pane and each node's status is updated in-place by the backend.
+    // Fire a background existence check per added command. Non-blocking.
     void autoVerifyAddedCommands(addedCommandIds);
   }
 

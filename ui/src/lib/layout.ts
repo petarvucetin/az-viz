@@ -56,10 +56,11 @@ export async function runLayout(
   const graph = {
     id: "root",
     layoutOptions: {
-      // "elk.algorithm": "mrtree",
-      // "elk.direction": "DOWN",
-     
-      // "elk.hierarchyHandling": "INCLUDE_CHILDREN",
+      // Route edges across the RG / group / node hierarchy as one graph.
+      // Without this, edges that cross container boundaries (e.g. from a
+      // node inside a group to a sibling outside the group) lay out
+      // unpredictably and children fall back to (0,0).
+      "elk.hierarchyHandling": "INCLUDE_CHILDREN",
     },
     children: toElk(undefined),
     edges: edges.map(e => ({ id: e.id, sources: [e.source], targets: [e.target] })),

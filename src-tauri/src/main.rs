@@ -21,6 +21,7 @@ fn main() {
         .manage(session)
         .invoke_handler(tauri::generate_handler![
             ipc_cmd::add_command,
+            ipc_cmd::add_commands_batch,
             ipc_cmd::snapshot,
             ipc_cmd::dry_run,
             ipc_cmd::emit_script,

@@ -1,4 +1,4 @@
-import type { Node, Edge, GraphSnapshot, RunEvent, Variable } from "./types";
+import type { Node, Edge, GraphSnapshot, Group, RunEvent, Variable } from "./types";
 
 export type PendingAuthAction =
   | { kind: "verify"; logicalKey: string }
@@ -10,6 +10,9 @@ class AppState {
   variables = $state<Variable[]>([]);
   /** Map from logical node key → variable names referenced by its producer command */
   varConsumers = $state<Record<string, string[]>>({});
+  groups = $state<Group[]>([]);
+  /** Map from group id → logical node keys of member nodes (declaration order) */
+  groupNodes = $state<Record<string, string[]>>({});
   selectedNodeKey = $state<string | null>(null);
   logLines = $state<string[]>([]);
   lastRun = $state<{ succeeded: number; failed: number } | null>(null);
@@ -34,6 +37,8 @@ class AppState {
     this.edges = snap.edges;
     this.variables = snap.variables ?? [];
     this.varConsumers = snap.var_consumers ?? {};
+    this.groups = snap.groups ?? [];
+    this.groupNodes = snap.group_nodes ?? {};
   }
 
   appendLog(line: string) {

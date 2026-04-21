@@ -34,6 +34,18 @@ export interface Variable {
   resolved: string | null;
 }
 
+export interface Group {
+  id: string;
+  title: string;
+  command_ids: string[];
+}
+
+export type BatchAddResult =
+  | { kind: "command"; id: string }
+  | { kind: "section"; title: string }
+  | { kind: "duplicate"; line_index: number; line: string; produces: string }
+  | { kind: "error"; line_index: number; line: string; message: string };
+
 export type RunEvent =
   | { type: "node-started"; node: string; argv: string[] }
   | { type: "node-log"; node: string; line: string; is_err: boolean }
@@ -50,4 +62,7 @@ export interface GraphSnapshot {
   variables: Variable[];
   /** logical key of a produced node → variable names the producing command references */
   var_consumers: Record<string, string[]>;
+  groups: Group[];
+  /** group id → logical node keys in the group, in declaration order */
+  group_nodes: Record<string, string[]>;
 }
